@@ -71,7 +71,7 @@ jobs:
 
       # Separate role, separate trust policy (sub: :environment:break-glass), 60-min
       # max session. Distinguishable from a normal deploy in CloudTrail by ARN alone.
-      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+      - uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
         with:
           role-to-assume: arn:aws:iam::123456789012:role/gha-accounts-api-breakglass
           aws-region: ap-south-1
