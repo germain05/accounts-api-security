@@ -1,0 +1,156 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-ephemeral-containers
+  annotations:
+    policies.kyverno.io/title: Hold ephemeral debug containers to the pod baseline
+    policies.kyverno.io/severity: high
+    example-bank.io/threat: "T2 — lateral movement / post-exploitation"
+    # ---- rollout ----
+    example-bank.io/day-one-mode: "Enforce"
+    example-bank.io/rationale-for-enforce: >-
+      Unlike the security-context baseline, this one cannot break a running
+      workload. It only ever fires on `kubectl debug`, which is an interactive
+      human action with a human present to read the rejection message — so the
+      usual reason for an audit grace period (someone else's deploy fails at 3am
+      with no context) does not apply. Enforcing on day one costs the other twelve
+      teams nothing except a debug container that has to be non-root.
+    example-bank.io/found-in-review: >-
+      Added after review found that every other policy in this directory inspects
+      `spec.containers` and `spec.initContainers` only. Ephemeral containers are
+      neither, and they arrive through a different admission path.
+spec:
+  # Enforce, cluster-wide, from day one. See the annotation above.
+  validationFailureAction: Enforce
+  background: false        # subresource requests are not visible to background scans
+
+  rules:
+    # -------------------------------------------------------------------------
+    # THE BYPASS THIS CLOSES
+    #
+    # `kubectl debug -n accounts <pod> --image=alpine --target=api -- sh` does not
+    # create a Pod. It sends an UPDATE to the `pods/ephemeralcontainers`
+    # SUBRESOURCE of a pod that has already been admitted. Consequences:
+    #
+    #   * Every policy that matches `kinds: [Pod]` without naming the subresource
+    #     never sees it. The pod passed admission days ago and is not re-evaluated.
+    #   * The new container is NOT covered by rules written against
+    #     `spec.containers[]` or `spec.initContainers[]` — it lands in
+    #     `spec.ephemeralContainers[]`, a third list.
+    #   * With `--target`, it joins the target container's process namespace, so it
+    #     can read `/proc/1/environ`, attach to the running process, and read the
+    #     mounted DB credential at /var/run/secrets/db — the exact asset the
+    #     restricted security context and the CSI delivery path were protecting.
+    #   * `--profile=sysadmin` (kubectl >= 1.30) asks for a privileged container
+    #     with host namespaces.
+    #
+    # So an attacker or an insider holding `patch pods/ephemeralcontainers` in this
+    # namespace gets a root shell alongside the workload without tripping a single
+    # other policy in this directory. The RBAC in remediate/workload-fixed.yaml does
+    # not grant that verb, but a dozen other teams' RoleBindings and any
+    # cluster-admin do.
+    #
+    # Note the second control that matters here and is NOT in this file: this is
+    # also why `accounts_api_unexpected_process_spawned` in runtime/falco-rules.yaml
+    # is scoped to the pod rather than to the container — a debug container is a new
+    # process in the same pod sandbox, and Falco sees it even when admission does not.
+    - name: ephemeral-containers-restricted
+      match:
+        any:
+          - resources:
+              # BOTH, deliberately.
+              #   Pod/ephemeralcontainers — the `kubectl debug` path, an UPDATE to
+              #     the subresource of an already-admitted pod. This is the one that
+              #     matters in a live cluster and the one every other policy misses.
+              #   Pod — a pod created with ephemeralContainers already populated,
+              #     and the form the offline `kyverno test` can actually evaluate.
+              # Matching only the subresource would leave the CLI assertion below
+              # reporting "Excluded" — a green tick for a rule that never ran.
+              kinds:
+                - Pod
+                - Pod/ephemeralcontainers
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          Ephemeral (debug) containers are held to the same baseline as the
+          workload: non-root, no privilege escalation, not privileged, all
+          capabilities dropped, RuntimeDefault seccomp. Debugging a service that
+          holds customer IBANs is not a reason to suspend the controls protecting
+          them — use `--profile=restricted`, or take the pod out of the load
+          balancer and use break-glass (docs/03-break-glass.md). [T2]
+        foreach:
+          - list: "request.object.spec.ephemeralContainers[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.securityContext.privileged || `false` }}"
+                    operator: Equals
+                    value: true
+                  # NOT `{{ ... || `true` }}`. JMESPath treats `false` as a falsy
+                  # value, so `false || true` evaluates to TRUE and the rule denies
+                  # a container that correctly set the field to false. Review caught
+                  # this rejecting a fully compliant initContainer — a false positive
+                  # on somebody else's workload, which is precisely how an admission
+                  # controller gets uninstalled. to_string() sidesteps the operator:
+                  # absent -> "null", false -> "false", true -> "true", so "must be
+                  # explicitly false" is expressible without relying on truthiness.
+                  - key: "{{ to_string(element.securityContext.allowPrivilegeEscalation) }}"
+                    operator: NotEquals
+                    value: "false"
+                  - key: "{{ element.securityContext.runAsNonRoot || `false` }}"
+                    operator: NotEquals
+                    value: true
+                  - key: "{{ element.securityContext.runAsUser || `-1` }}"
+                    operator: Equals
+                    value: 0
+                  # Same trap: an ABSENT `drop` yields an empty array, and
+                  # AnyNotIn over an empty array denies nothing — so a container
+                  # dropping no capabilities at all would have passed. contains()
+                  # asks the question directly.
+                  - key: "{{ contains(element.securityContext.capabilities.drop || `[]`, 'ALL') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ element.securityContext.seccompProfile.type || 'Unconfined' }}"
+                    operator: NotIn
+                    value: ["RuntimeDefault", "Localhost"]
+
+    # -------------------------------------------------------------------------
+    # A debug container may not be an arbitrary internet image. This is the same
+    # registry rule as restrict-registries.yaml, applied to the list that policy
+    # cannot see. Without it the baseline above is satisfiable by
+    # `--image=docker.io/attacker/toolkit` running happily as uid 10001.
+    - name: ephemeral-containers-registry
+      match:
+        any:
+          - resources:
+              # BOTH, deliberately.
+              #   Pod/ephemeralcontainers — the `kubectl debug` path, an UPDATE to
+              #     the subresource of an already-admitted pod. This is the one that
+              #     matters in a live cluster and the one every other policy misses.
+              #   Pod — a pod created with ephemeralContainers already populated,
+              #     and the form the offline `kyverno test` can actually evaluate.
+              # Matching only the subresource would leave the CLI assertion below
+              # reporting "Excluded" — a green tick for a rule that never ran.
+              kinds:
+                - Pod
+                - Pod/ephemeralcontainers
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          Ephemeral containers must come from the bank's ECR registry. A debug
+          image pulled from a public registry is unreviewed code with a shell,
+          running inside the target pod's namespaces. [T2/T4]
+        foreach:
+          - list: "request.object.spec.ephemeralContainers[]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: NotEquals
+                    value: "210987654321.dkr.ecr.ap-south-1.amazonaws.com/*"

@@ -33,8 +33,11 @@ waivers:
     ticket: SEC-2041
     requested_by: r.mehta@example-bank.com
     approved_by: p.okafor@example-bank.com
-    created: 2026-08-28
-    expires: 2026-09-27          # 30d cap for HIGH
+    # Renewed 2026-09-04 under SEC-2041 after re-confirming the callgraph result;
+    # fresh two-person approval, fresh signature. This is the renewal path in
+    # waivers/README.md being exercised rather than described.
+    created: 2026-09-04
+    expires: 2026-10-04          # 30d cap for HIGH
 
   - id: SEC-2077-gitleaks-testdata-iban
     tool: gitleaks

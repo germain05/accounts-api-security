@@ -171,9 +171,17 @@ spec:
                   - key: "{{ element.securityContext.privileged || `false` }}"
                     operator: Equals
                     value: true
-                  - key: "{{ element.securityContext.allowPrivilegeEscalation || `true` }}"
-                    operator: Equals
-                    value: true
+                  # NOT `{{ ... || `true` }}`. JMESPath treats `false` as a falsy
+                  # value, so `false || true` evaluates to TRUE and the rule denies
+                  # a container that correctly set the field to false. Review caught
+                  # this rejecting a fully compliant initContainer — a false positive
+                  # on somebody else's workload, which is precisely how an admission
+                  # controller gets uninstalled. to_string() sidesteps the operator:
+                  # absent -> "null", false -> "false", true -> "true", so "must be
+                  # explicitly false" is expressible without relying on truthiness.
+                  - key: "{{ to_string(element.securityContext.allowPrivilegeEscalation) }}"
+                    operator: NotEquals
+                    value: "false"
                   - key: "{{ element.securityContext.runAsNonRoot || `false` }}"
                     operator: NotEquals
                     value: true

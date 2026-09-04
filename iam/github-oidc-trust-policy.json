@@ -1,10 +1,4 @@
 {
-  "_comment": [
-    "Trust policy for arn:aws:iam::123456789012:role/gha-accounts-api-deploy — the PROD deploy role.",
-    "Threat T1. See docs/02-build-integrity.md for what this scoping denies.",
-    "JSON has no comments; this key is stripped by terraform/iam_github_oidc.tf before use and exists",
-    "only so a reviewer reads the intent next to the condition it belongs to."
-  ],
   "Version": "2012-10-17",
   "Statement": [
     {

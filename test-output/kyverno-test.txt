@@ -3,53 +3,573 @@ Loading test  ( policy/kyverno/tests/kyverno-test.yaml ) ...
   Loading policies ...
   Loading resources ...
   Loading exceptions ...
-  Applying 9 policies to 8 resources ...
-  Checking results ...
+  Applying 11 policies to 13 resources ...
 
-│──────────│────────────────────────────────────│────────────────────────────────────│─────────────────────────────────│────────│────────│
-│ [40;32mID (39) [0m │ [40;32mPOLICY                            [0m │ [40;32mRULE                              [0m │ [40;32mRESOURCE                       [0m │ [40;32mRESULT[0m │ [40;32mREASON[0m │
-│──────────│────────────────────────────────────│────────────────────────────────────│─────────────────────────────────│────────│────────│
-│ 1        │ disallow-host-namespaces           │ autogen-host-namespaces            │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 2        │ disallow-host-namespaces           │ autogen-host-namespaces            │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 3        │ disallow-hostpath                  │ autogen-no-hostpath-volumes        │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 4        │ disallow-hostpath                  │ autogen-no-hostpath-volumes        │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 5        │ require-restricted-securitycontext │ autogen-run-as-non-root            │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 6        │ require-restricted-securitycontext │ autogen-no-privilege-escalation    │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 7        │ require-restricted-securitycontext │ autogen-drop-all-capabilities      │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 8        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default    │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 9        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default    │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 10       │ require-restricted-securitycontext │ autogen-run-as-non-root            │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 11       │ require-restricted-securitycontext │ autogen-no-uid-zero                │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 12       │ require-restricted-securitycontext │ autogen-no-uid-zero                │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 13       │ require-image-digest               │ autogen-image-must-be-digest       │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 14       │ require-image-digest               │ autogen-image-must-be-digest       │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 15       │ restrict-registries                │ autogen-allowed-registries         │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 16       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom          │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 17       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom          │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 18       │ require-resource-limits            │ autogen-limits-required            │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
-│ 19       │ restrict-rbac-wildcards            │ no-wildcard-verbs                  │ Role/accounts-api-legacy        │ Pass   │ Ok     │
-│ 20       │ restrict-rbac-wildcards            │ secrets-need-named-resources       │ Role/accounts-api-legacy        │ Pass   │ Ok     │
-│ 21       │ disallow-host-namespaces           │ autogen-host-namespaces            │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 22       │ disallow-hostpath                  │ autogen-no-hostpath-volumes        │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 23       │ require-restricted-securitycontext │ autogen-run-as-non-root            │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 24       │ require-restricted-securitycontext │ autogen-no-privilege-escalation    │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 25       │ require-restricted-securitycontext │ autogen-drop-all-capabilities      │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 26       │ require-restricted-securitycontext │ autogen-seccomp-runtime-default    │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 27       │ require-image-digest               │ autogen-image-must-be-digest       │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 28       │ restrict-registries                │ autogen-allowed-registries         │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 29       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom          │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 30       │ require-resource-limits            │ autogen-limits-required            │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 31       │ restrict-rbac-wildcards            │ no-wildcard-verbs                  │ Role/accounts-api               │ Pass   │ Ok     │
-│ 32       │ restrict-rbac-wildcards            │ secrets-need-named-resources       │ Role/accounts-api               │ Pass   │ Ok     │
-│ 33       │ require-restricted-securitycontext │ autogen-no-uid-zero                │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 34       │ restrict-rbac-wildcards            │ no-wildcard-resources              │ Role/accounts-api               │ Pass   │ Ok     │
-│ 35       │ restrict-rbac-wildcards            │ no-wildcard-resources              │ Role/accounts-api-legacy        │ Pass   │ Ok     │
-│ 36       │ require-restricted-securitycontext │ autogen-init-containers-restricted │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
-│ 37       │ require-restricted-securitycontext │ autogen-init-containers-restricted │ Deployment/accounts-api         │ Pass   │ Ok     │
-│ 38       │ restrict-privileged-rolebindings   │ no-binding-to-super-roles          │ RoleBinding/accounts-api-bypass │ Pass   │ Ok     │
-│ 39       │ restrict-privileged-rolebindings   │ no-binding-to-super-roles          │ RoleBinding/accounts-api        │ Pass   │ Ok     │
-│──────────│────────────────────────────────────│────────────────────────────────────│─────────────────────────────────│────────│────────│
+policy mutate-safe-defaults applied to accounts/RoleBinding/accounts-api:
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: accounts-api
+  namespace: accounts
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: accounts-api
+subjects:
+- kind: ServiceAccount
+  name: accounts-api
+  namespace: accounts
+
+---
 
 
-Test Summary: 39 tests passed and 0 tests failed
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to payments/Pod/compliant-initcontainer:
+apiVersion: v1
+kind: Pod
+metadata:
+  name: compliant-initcontainer
+  namespace: payments
+spec:
+  containers:
+  - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@sha256:3f79b8e6b6e2c9d1c9f0a4a3e5d7c8b9a1f2e3d4c5b6a7988776655443322110
+    name: api
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+  initContainers:
+  - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/migrate@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+    name: schema-migrate
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to payments/Pod/someone-elses-workload:
+apiVersion: v1
+kind: Pod
+metadata:
+  name: someone-elses-workload
+  namespace: payments
+spec:
+  containers:
+  - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/legacy@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+    name: app
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    securityContext:
+      allowPrivilegeEscalation: false
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/Deployment/accounts-api-bypass:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accounts-api-bypass
+  namespace: accounts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: accounts-api-bypass
+  template:
+    metadata:
+      labels:
+        app: accounts-api-bypass
+    spec:
+      containers:
+      - env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: accounts-api-env
+        image: docker.io/library/nginx@sha256:0d17b565c37bcbd895e9d92315a05c1c3c9a29f762b011a10c54a66cd53c9b31
+        name: api
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 0
+          seccompProfile:
+            type: Unconfined
+        volumeMounts:
+        - mountPath: /cache
+          name: cache
+      hostNetwork: false
+      initContainers:
+      - command:
+        - sh
+        - -c
+        - cp /usr/bin/nc /shared/ && chmod 4755 /shared/nc
+        image: docker.io/library/busybox@sha256:0000000000000000000000000000000000000000000000000000000000000001
+        name: setup
+        securityContext:
+          allowPrivilegeEscalation: true
+          privileged: true
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /shared
+          name: cache
+      serviceAccountName: accounts-api
+      volumes:
+      - hostPath:
+          path: /var/tmp/accounts-cache
+          type: DirectoryOrCreate
+        name: cache
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/Role/accounts-api:
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: accounts-api
+  namespace: accounts
+rules:
+- apiGroups:
+  - ""
+  resourceNames:
+  - accounts-api-config
+  resources:
+  - configmaps
+  verbs:
+  - get
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/RoleBinding/accounts-api-bypass:
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: accounts-api-bypass
+  namespace: accounts
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: accounts-api
+  namespace: accounts
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/ServiceAccount/accounts-api:
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/accounts-api-pod
+  name: accounts-api
+  namespace: accounts
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/Deployment/accounts-api:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: accounts-api
+    app.kubernetes.io/part-of: retail-banking
+    data-classification: pii-and-cardholder-adjacent
+  name: accounts-api
+  namespace: accounts
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: accounts-api
+  template:
+    metadata:
+      labels:
+        app: accounts-api
+        data-classification: pii-and-cardholder-adjacent
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - env:
+        - name: DB_CREDENTIAL_FILE
+          value: /var/run/secrets/db/credential.json
+        - name: AWS_REGION
+          value: ap-south-1
+        - name: OTEL_SERVICE_NAME
+          value: accounts-api
+        - name: LOG_REDACTION_MODE
+          value: strict
+        envFrom:
+        - configMapRef:
+            name: accounts-api-config
+        image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@sha256:3f79b8e6b6e2c9d1c9f0a4a3e5d7c8b9a1f2e3d4c5b6a7988776655443322110
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 10
+        name: api
+        ports:
+        - containerPort: 8080
+          name: http
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+        resources:
+          limits:
+            cpu: "1"
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp
+        - mountPath: /var/run/secrets/db
+          name: db-credential
+          readOnly: true
+      hostIPC: false
+      hostNetwork: false
+      hostPID: false
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: accounts-api
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            app: accounts-api
+        maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - emptyDir:
+          medium: Memory
+          sizeLimit: 64Mi
+        name: tmp
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: accounts-api-db
+        name: db-credential
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/Pod/accounts-api-debugged:
+apiVersion: v1
+kind: Pod
+metadata:
+  name: accounts-api-debugged
+  namespace: accounts
+spec:
+  containers:
+  - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@sha256:3f79b8e6b6e2c9d1c9f0a4a3e5d7c8b9a1f2e3d4c5b6a7988776655443322110
+    name: api
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+  ephemeralContainers:
+  - image: docker.io/library/alpine:latest
+    name: debugger
+    securityContext:
+      allowPrivilegeEscalation: true
+      privileged: true
+      runAsUser: 0
+      seccompProfile:
+        type: Unconfined
+    stdin: true
+    targetContainerName: api
+    tty: true
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  serviceAccountName: accounts-api
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/Pod/accounts-api-debugged-ok:
+apiVersion: v1
+kind: Pod
+metadata:
+  name: accounts-api-debugged-ok
+  namespace: accounts
+spec:
+  containers:
+  - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@sha256:3f79b8e6b6e2c9d1c9f0a4a3e5d7c8b9a1f2e3d4c5b6a7988776655443322110
+    name: api
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+  ephemeralContainers:
+  - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/debug-toolkit@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+    name: debugger
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      privileged: false
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+    stdin: true
+    targetContainerName: api
+    tty: true
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  serviceAccountName: accounts-api
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to payments/Pod/deliberately-privileged:
+apiVersion: v1
+kind: Pod
+metadata:
+  name: deliberately-privileged
+  namespace: payments
+spec:
+  containers:
+  - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/legacy@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+    name: app
+    resources:
+      requests:
+        cpu: "2"
+        memory: 4Gi
+    securityContext:
+      allowPrivilegeEscalation: true
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/Deployment/accounts-api-legacy:
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accounts-api-legacy
+  namespace: accounts
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: accounts-api
+  template:
+    metadata:
+      labels:
+        app: accounts-api
+    spec:
+      containers:
+      - envFrom:
+        - secretRef:
+            name: accounts-api-env
+        image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/accounts-api:latest
+        name: api
+        securityContext:
+          privileged: false
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /var/run/docker.sock
+          name: docker-sock
+        - mountPath: /hostlogs
+          name: host-logs
+      hostNetwork: true
+      serviceAccountName: accounts-api
+      volumes:
+      - hostPath:
+          path: /var/run/docker.sock
+        name: docker-sock
+      - hostPath:
+          path: /var/log
+        name: host-logs
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.
+policy mutate-safe-defaults applied to accounts/Role/accounts-api-legacy:
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: accounts-api-legacy
+  namespace: accounts
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  - pods
+  - configmaps
+  verbs:
+  - '*'
+
+---
+
+
+Mutation:
+Mutation has been applied successfully.  Checking results ...
+
+│──────────│────────────────────────────────────│──────────────────────────────────────────│─────────────────────────────────│────────│────────│
+│ [40;32mID (46) [0m │ [40;32mPOLICY                            [0m │ [40;32mRULE                                    [0m │ [40;32mRESOURCE                       [0m │ [40;32mRESULT[0m │ [40;32mREASON[0m │
+│──────────│────────────────────────────────────│──────────────────────────────────────────│─────────────────────────────────│────────│────────│
+│ 1        │ disallow-host-namespaces           │ autogen-host-namespaces                  │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 2        │ disallow-host-namespaces           │ autogen-host-namespaces                  │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 3        │ disallow-hostpath                  │ autogen-no-hostpath-volumes              │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 4        │ disallow-hostpath                  │ autogen-no-hostpath-volumes              │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 5        │ require-restricted-securitycontext │ autogen-run-as-non-root                  │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 6        │ require-restricted-securitycontext │ autogen-no-privilege-escalation          │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 7        │ require-restricted-securitycontext │ autogen-drop-all-capabilities            │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 8        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default          │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 9        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default          │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 10       │ require-restricted-securitycontext │ autogen-run-as-non-root                  │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 11       │ require-restricted-securitycontext │ autogen-no-uid-zero                      │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 12       │ require-restricted-securitycontext │ autogen-no-uid-zero                      │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 13       │ require-image-digest               │ autogen-image-must-be-digest             │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 14       │ require-image-digest               │ autogen-image-must-be-digest             │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 15       │ restrict-registries                │ autogen-allowed-registries               │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 16       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom                │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 17       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom                │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 18       │ require-resource-limits            │ autogen-limits-required                  │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 19       │ restrict-rbac-wildcards            │ no-wildcard-verbs                        │ Role/accounts-api-legacy        │ Pass   │ Ok     │
+│ 20       │ restrict-rbac-wildcards            │ secrets-need-named-resources             │ Role/accounts-api-legacy        │ Pass   │ Ok     │
+│ 21       │ disallow-host-namespaces           │ autogen-host-namespaces                  │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 22       │ disallow-hostpath                  │ autogen-no-hostpath-volumes              │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 23       │ require-restricted-securitycontext │ autogen-run-as-non-root                  │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 24       │ require-restricted-securitycontext │ autogen-no-privilege-escalation          │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 25       │ require-restricted-securitycontext │ autogen-drop-all-capabilities            │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 26       │ require-restricted-securitycontext │ autogen-seccomp-runtime-default          │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 27       │ require-image-digest               │ autogen-image-must-be-digest             │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 28       │ restrict-registries                │ autogen-allowed-registries               │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 29       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom                │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 30       │ require-resource-limits            │ autogen-limits-required                  │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 31       │ restrict-rbac-wildcards            │ no-wildcard-verbs                        │ Role/accounts-api               │ Pass   │ Ok     │
+│ 32       │ restrict-rbac-wildcards            │ secrets-need-named-resources             │ Role/accounts-api               │ Pass   │ Ok     │
+│ 33       │ require-restricted-securitycontext │ autogen-no-uid-zero                      │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 34       │ restrict-rbac-wildcards            │ no-wildcard-resources                    │ Role/accounts-api               │ Pass   │ Ok     │
+│ 35       │ restrict-rbac-wildcards            │ no-wildcard-resources                    │ Role/accounts-api-legacy        │ Pass   │ Ok     │
+│ 36       │ require-restricted-securitycontext │ autogen-init-containers-restricted       │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 37       │ require-restricted-securitycontext │ autogen-init-containers-restricted       │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 38       │ restrict-privileged-rolebindings   │ no-binding-to-super-roles                │ RoleBinding/accounts-api-bypass │ Pass   │ Ok     │
+│ 39       │ restrict-privileged-rolebindings   │ no-binding-to-super-roles                │ RoleBinding/accounts-api        │ Pass   │ Ok     │
+│ 40       │ restrict-ephemeral-containers      │ ephemeral-containers-restricted          │ Pod/accounts-api-debugged       │ Pass   │ Ok     │
+│ 41       │ restrict-ephemeral-containers      │ ephemeral-containers-restricted          │ Pod/accounts-api-debugged-ok    │ Pass   │ Ok     │
+│ 42       │ restrict-ephemeral-containers      │ ephemeral-containers-registry            │ Pod/accounts-api-debugged       │ Pass   │ Ok     │
+│ 43       │ restrict-ephemeral-containers      │ ephemeral-containers-registry            │ Pod/accounts-api-debugged-ok    │ Pass   │ Ok     │
+│ 44       │ require-restricted-securitycontext │ init-containers-restricted               │ Pod/compliant-initcontainer     │ Pass   │ Ok     │
+│ 45       │ mutate-safe-defaults               │ default-allow-privilege-escalation-false │ Pod/someone-elses-workload      │ Pass   │ Ok     │
+│ 46       │ mutate-safe-defaults               │ default-allow-privilege-escalation-false │ Pod/deliberately-privileged     │ Pass   │ Ok     │
+│──────────│────────────────────────────────────│──────────────────────────────────────────│─────────────────────────────────│────────│────────│
+
+
+Test Summary: 46 tests passed and 0 tests failed
 

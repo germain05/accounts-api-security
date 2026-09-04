@@ -1,0 +1,35 @@
+# Fixtures for mutate-safe-defaults — the rollout instrument, not a control.
+#
+# These are what another team's workload looks like on a shared cluster: nobody
+# was hostile, nobody thought about securityContext. Rejecting these is how a
+# platform team loses the argument; defaulting them in is how the eventual
+# promotion of require-restricted-securitycontext to Enforce becomes a no-op.
+---
+# Nothing specified. Must be MUTATED into the baseline.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: someone-elses-workload
+  namespace: payments
+spec:
+  containers:
+    - name: app
+      image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/legacy@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+---
+# An EXPLICIT `allowPrivilegeEscalation: true`. Must be left ALONE — see the
+# caveat in the policy. Silently reversing a stated intent produces a workload
+# that does not do what its manifest says. This one is the validate policy's
+# problem, and require-restricted-securitycontext does reject it.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: deliberately-privileged
+  namespace: payments
+spec:
+  containers:
+    - name: app
+      image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/legacy@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+      securityContext:
+        allowPrivilegeEscalation: true
+      resources:
+        requests: { cpu: "2", memory: "4Gi" }

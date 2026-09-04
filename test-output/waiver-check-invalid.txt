@@ -8,5 +8,6 @@
 ::error::SEC-1905-lazy: ticket must be SEC-nnn (a waiver with no tracking issue is a decision nobody revisits)
 ::error::SEC-1905-lazy: reason is too short to be a reason
 ::error::SEC-1905-lazy: compensating_control is mandatory — 'we accept it' is not a control
+::error::SEC-1906-undateable: created/expires must be YYYY-MM-DD dates
 
-FAIL: 9 waiver problem(s); 6 waiver(s) examined.
+FAIL: 10 waiver problem(s); 7 waiver(s) examined.

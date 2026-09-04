@@ -13,7 +13,7 @@ metadata:
   annotations:
     # IRSA. Role trust is scoped to this exact namespace/SA pair — see terraform/iam_pod_identity.tf
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/accounts-api-pod
-automountServiceAccountToken: false     # A1: pods opt in individually, below
+automountServiceAccountToken: false     # A1 — and the pod below does NOT opt back in
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -36,7 +36,20 @@ spec:
         data-classification: pii-and-cardholder-adjacent
     spec:
       serviceAccountName: accounts-api
-      automountServiceAccountToken: true   # A1: needed for IRSA; scoped by the Role below
+      # A1: the pod carries NO Kubernetes API token. This is deliberate and it is
+      # the strongest half of the RBAC fix — a Role you cannot present a token for
+      # is a Role that cannot be abused.
+      #
+      # It costs nothing here because nothing in this pod talks to the API server:
+      #   * `envFrom: configMapRef` is resolved by the KUBELET, not by the pod, so
+      #     it needs no permission of its own;
+      #   * the DB credential arrives on a CSI volume, never through the API.
+      #
+      # IRSA is unaffected — a common misreading. The EKS pod identity webhook
+      # projects its own `aws-iam-token` volume with audience `sts.amazonaws.com`;
+      # `automountServiceAccountToken` governs only the default `kube-api-access-*`
+      # projection. AWS auth keeps working with no Kubernetes API token present.
+      automountServiceAccountToken: false
 
       # A2: no host namespaces. Without this the NetworkPolicy in k8s/ is inert.
       hostNetwork: false
@@ -132,20 +145,38 @@ spec:
             volumeAttributes:
               secretProviderClass: accounts-api-db
 ---
-# A1: the RBAC rewrite. `verbs: ["*"]` on `secrets` became: read one named
-# ConfigMap, and nothing else. In particular NO access to secrets at all — the
-# database credential never transits the Kubernetes API, so a stolen SA token
-# does not yield it. And no `create pods`, which was the escalation primitive.
+# A1: the RBAC rewrite. `verbs: ["*"]` on `secrets`, `pods` and `configmaps`
+# became `get` on one named ConfigMap.
+#
+# In particular NO access to `secrets` at all — the database credential never
+# transits the Kubernetes API, so a stolen SA token does not yield it — and no
+# `create pods`, which was the actual escalation primitive (create a pod that
+# mounts hostPath:/ and you own the node).
+#
+# Two layers, deliberately. The pod above mounts no API token, so today nothing
+# can present this Role at all; the Role is what the grant becomes IF the service
+# ever needs the API. Defence in depth cuts both ways here: neither layer is
+# load-bearing on its own, and a reviewer should not read the narrow Role as the
+# only thing standing between an attacker and the namespace's Secrets.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: accounts-api
   namespace: accounts
 rules:
+  # `get` only, on one named ConfigMap.
+  #
+  # `watch` is deliberately absent rather than merely unnecessary: RBAC matches
+  # `resourceNames` against the name on the request, and a collection watch carries
+  # no name — so `resourceNames + watch` does not authorise an informer. It would
+  # have to be widened to `watch` on ALL ConfigMaps in the namespace to work, which
+  # is a much larger grant than it looks. Writing `watch` here would have produced a
+  # rule that reads as least-privilege and either fails at runtime or gets "fixed"
+  # later by deleting the resourceNames line.
   - apiGroups: [""]
     resources: ["configmaps"]
-    resourceNames: ["accounts-api-config"]   # named resource, not the whole type
-    verbs: ["get", "watch"]
+    resourceNames: ["accounts-api-config"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

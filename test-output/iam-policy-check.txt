@@ -1,0 +1,1 @@
+OK: 5 IAM policy document(s) are schema-valid and appliable.

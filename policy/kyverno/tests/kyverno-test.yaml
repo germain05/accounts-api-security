@@ -29,10 +29,15 @@ policies:
   - ../policies/disallow-secrets-as-env.yaml
   - ../policies/require-resource-limits.yaml
   - ../policies/restrict-privileged-rolebindings.yaml
+  - ../policies/restrict-ephemeral-containers.yaml
+  - ../policies/mutate-safe-defaults.yaml
 resources:
   - resources/bad-workload.yaml
   - resources/bypass-workload.yaml
   - resources/good-workload.yaml
+  - resources/ephemeral-containers.yaml
+  - resources/compliant-initcontainer.yaml
+  - resources/unhardened-tenant-pod.yaml
 
 results:
   # ---------------------------------------------------------------- A2
@@ -267,3 +272,59 @@ results:
     resources: [accounts-api]
     kind: RoleBinding
     result: pass
+
+  # ---------------------------------------------------- ephemeral containers
+  # The `kubectl debug` bypass. Every other policy in this suite inspects
+  # spec.containers and spec.initContainers; an ephemeral container is in neither
+  # list and arrives through the pods/ephemeralcontainers subresource, so it is
+  # invisible to all of them. Both rules must reject the sysadmin-profile debug
+  # container and admit the sanctioned one.
+  - policy: restrict-ephemeral-containers
+    rule: ephemeral-containers-restricted
+    resources: [accounts-api-debugged]
+    kind: Pod
+    result: fail
+  - policy: restrict-ephemeral-containers
+    rule: ephemeral-containers-restricted
+    resources: [accounts-api-debugged-ok]
+    kind: Pod
+    result: pass
+  - policy: restrict-ephemeral-containers
+    rule: ephemeral-containers-registry
+    resources: [accounts-api-debugged]
+    kind: Pod
+    result: fail
+  - policy: restrict-ephemeral-containers
+    rule: ephemeral-containers-registry
+    resources: [accounts-api-debugged-ok]
+    kind: Pod
+    result: pass
+
+  # ------------------------------------------------ false-positive regression
+  # A compliant initContainer must be ADMITTED. This assertion exists because the
+  # rule once denied it (JMESPath `false || `true`` -> true). See the fixture.
+  - policy: require-restricted-securitycontext
+    rule: init-containers-restricted
+    resources: [compliant-initcontainer]
+    kind: Pod
+    result: pass
+
+  # ------------------------------------------------- mutate-then-validate
+  # The rollout instrument. Two assertions, and the second is the honest one:
+  #   1. an unhardened tenant pod IS mutated into the baseline — with the exact
+  #      patched output pinned, so a wrong patch cannot report success;
+  #   2. a pod that set `allowPrivilegeEscalation: true` ON PURPOSE is SKIPPED,
+  #      not silently reversed. Mutation defaults what was unspecified; it does
+  #      not overrule a stated intent. Catching that case is the validate
+  #      policy's job, which is why mutation does not replace it.
+  - policy: mutate-safe-defaults
+    rule: default-allow-privilege-escalation-false
+    resources: [someone-elses-workload]
+    kind: Pod
+    patchedResources: resources/unhardened-tenant-pod-patched.yaml
+    result: pass
+  - policy: mutate-safe-defaults
+    rule: default-allow-privilege-escalation-false
+    resources: [deliberately-privileged]
+    kind: Pod
+    result: skip

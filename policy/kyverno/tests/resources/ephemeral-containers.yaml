@@ -1,0 +1,76 @@
+# Fixtures for restrict-ephemeral-containers.
+#
+# These are Pods carrying a populated `spec.ephemeralContainers`, which is what
+# the API server holds after a `kubectl debug` has been applied. The policy
+# matches the `Pod/ephemeralcontainers` subresource in a live cluster; the CLI
+# evaluates the same rule against the resulting object.
+---
+# THE ATTACK. `kubectl debug -n accounts accounts-api-xyz --image=alpine \
+#   --target=api --profile=sysadmin -- sh`
+# Root, privileged, escalation allowed, no seccomp, public image, and joined to
+# the target's process namespace so it can read /proc/1/environ and the mounted
+# DB credential. Must be REJECTED.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: accounts-api-debugged
+  namespace: accounts
+spec:
+  serviceAccountName: accounts-api
+  containers:
+    - name: api
+      image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@sha256:3f79b8e6b6e2c9d1c9f0a4a3e5d7c8b9a1f2e3d4c5b6a7988776655443322110
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        privileged: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }
+  ephemeralContainers:
+    - name: debugger
+      image: docker.io/library/alpine:latest
+      targetContainerName: api
+      stdin: true
+      tty: true
+      securityContext:
+        privileged: true
+        runAsUser: 0
+        allowPrivilegeEscalation: true
+        seccompProfile: { type: Unconfined }
+---
+# THE SANCTIONED PATH. `kubectl debug --profile=restricted` with the bank's own
+# debug image. Same person, same intent, no suspension of the baseline.
+# Must be ADMITTED.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: accounts-api-debugged-ok
+  namespace: accounts
+spec:
+  serviceAccountName: accounts-api
+  containers:
+    - name: api
+      image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@sha256:3f79b8e6b6e2c9d1c9f0a4a3e5d7c8b9a1f2e3d4c5b6a7988776655443322110
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        privileged: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }
+  ephemeralContainers:
+    - name: debugger
+      image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/debug-toolkit@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+      targetContainerName: api
+      stdin: true
+      tty: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        privileged: false
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }

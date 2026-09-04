@@ -1,9 +1,4 @@
 {
-  "_comment": [
-    "Trust policy for arn:aws:iam::210987654321:role/gha-accounts-api-ecr-push — the BUILD account role.",
-    "Weaker than the deploy role on purpose: it may push an image, it may not touch prod.",
-    "Threat T1."
-  ],
   "Version": "2012-10-17",
   "Statement": [
     {
