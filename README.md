@@ -6,7 +6,7 @@ controls a bank is examined against.
 
 Two things a reviewer can check in minutes rather than take on trust:
 
-* **The policy suite runs offline.** No AWS account, no credentials, no `terraform init`, no registry, no cluster. One command, eleven checks, three of which pass *by failing*.
+* **The policy suite runs offline.** No AWS account, no credentials, no registry, no cluster. One command, sixteen checks, four of which pass *by failing*.
 * **The supply-chain pipeline actually runs.** Push this repo and the Actions tab shows a real green run that builds the image, generates the SBOM, keyless-signs it, attests it, and then **verifies its own signature** — against GHCR, with no AWS account and no secrets. The AWS half is written as it would ship and is gated behind one repository variable.
 
 Nothing was applied against a real cloud. Where production would use AWS, the mapping is documented and the local equivalent is what runs. `ASSUMPTIONS.md` lists every gap I filled and exactly what was and was not executed.
@@ -17,6 +17,7 @@ Nothing was applied against a real cloud. Where production would use AWS, the ma
 
 ```bash
 # 1. tools — four pinned binaries into ./bin, macOS or Linux, arm64 or x86_64.
+#    (terraform is optional — the suite says SKIP rather than pretending.)
 #    Nothing system-wide, no package manager, delete one directory to undo.
 ./scripts/install-tools.sh
 export PATH="$PWD/bin:$PATH"
@@ -30,46 +31,65 @@ Versions are pinned to the ones that produced the committed output in
 `test-output/` — a policy suite that passes on a different engine version has
 proven less than it looks.
 
-Expected output — eleven checks, all passing, three of which pass **by failing**:
+Expected output — sixteen checks, all passing, four of which pass **by failing**:
 
 ```
 ──── fixture drift
   good-workload fixture == remediate/workload-fixed.yaml    PASS
+──── IAM policy documents  (section 2 + 4c)
+  iam/*.json are schema-valid and appliable                 PASS
 ──── Kyverno admission policies  (section 4a + 5)
-  kyverno test — 3 fixtures, 39 assertions                  PASS
+  kyverno test — 7 fixtures, 46 assertions                  PASS
 ──── Terraform policy-as-code  (section 4b)
   conftest verify — 33 rego unit tests                      PASS
   bad fixture must be rejected (11 deny rules)              PASS (failed as intended)
   evasion fixture must be rejected (var-driven, dynamic, IPv6, Aurora)  PASS (failed as intended)
   good fixture must pass                                    PASS
   shipped terraform/ must pass                              PASS
+  terraform validate (syntax + provider schema)             PASS
 ──── Waiver mechanism  (section 3)
   valid waivers: schema, approver, lifetime, expiry, signature  PASS
   expired / self-approved / over-cap / unwaivable-secret    PASS (failed as intended)
-  post-approval edit of `expires` breaks the signature      PASS (failed as intended)
+  post-approval edit of a signed field breaks the signature PASS (failed as intended)
+  ...and that fixture passes every OTHER rule (isolates the signature)  PASS
+  generate fails closed on an undateable waiver             PASS (failed as intended)
   derived ignore files come only from ACTIVE waivers        PASS
 ```
+
+`terraform validate` runs if `terraform` is on your PATH and says SKIP if it is
+not — `terraform init` needs one network call to the provider registry, which is
+why `conftest` and not `validate` is the *blocking* IaC gate. A captured run is in
+[`test-output/terraform-validate.txt`](test-output/terraform-validate.txt). Nothing
+was ever applied.
 
 Individual commands, if you would rather run them yourself:
 
 ```bash
-kyverno test policy/kyverno/tests                                              # 39 assertions
+kyverno test policy/kyverno/tests                                              # 46 assertions
 conftest verify --policy policy/rego                                           # 33 rego unit tests
 conftest test --policy policy/rego --parser hcl2 --all-namespaces terraform/   # must pass
 conftest test --policy policy/rego --parser hcl2 policy/fixtures/terraform/bad      # must FAIL, 11 denies
 conftest test --policy policy/rego --parser hcl2 policy/fixtures/terraform/evasion  # must FAIL, 7 denies
+python3 scripts/check_iam_policies.py                                           # iam/*.json appliable
 python3 scripts/waiver_check.py check --verify-signatures                      # must pass
 python3 scripts/waiver_check.py check --file waivers/fixtures/tampered.yaml --verify-signatures  # must FAIL
+python3 scripts/waiver_check.py check --file waivers/fixtures/tampered.yaml    # must PASS — isolates the signature
 ```
 
 Captured output from a real run is committed in [`test-output/`](test-output).
 
-> **This suite is designed to go red on 2026-09-27.** Waiver `SEC-2041` expires
-> then, and the whole point of the mechanism is that the build fails when a waiver
-> lapses rather than quietly continuing to suppress the finding. If you are
-> reading this after that date, that failure is the control working — the real fix
-> is a renewal PR. To see the rest of the suite green regardless:
+> **If you are reading this well after the submission date, expect the waiver gate
+> to be red.** A HIGH-severity waiver may live at most 30 days, so `SEC-2041`
+> lapses on 2026-10-04 — and an expired waiver is *designed* to fail the build
+> rather than quietly keep suppressing its finding. The suite prints a banner
+> saying so when it happens. In a real repository the fix is a renewal PR with
+> fresh two-person approval and a fresh signature. To see the suite as it stood on
+> the submission date:
 > `WAIVER_TODAY=2026-09-04 ./scripts/run-policy-tests.sh`
+>
+> The fail-on-lapse behaviour does not depend on that happening to you: it is
+> asserted deterministically by `waivers/fixtures/invalid-waivers.yaml`, whose
+> first entry expired in the past and always will have.
 
 ### Optional: against a real cluster
 
@@ -92,6 +112,7 @@ passing one.
 |---|---|
 | **[`THREAT-MODEL.md`](THREAT-MODEL.md)** | one page: trust boundaries, ranked top-5 threats T1–T5, controls or acceptance for each, and the threat I think is overrated here |
 | **[`TRACEABILITY.md`](TRACEABILITY.md)** | every artefact in the repo mapped back to a threat — including the two built without one, and why |
+| [`iam/README.md`](iam/README.md) | what each IAM policy denies that the original allowed, and why the rationale is not inside the JSON |
 | **[`DECISIONS.md`](DECISIONS.md)** | **Part 2.** biggest decisions, enforcement posture, two blast-radius scenarios, the attack path I cannot detect, regulatory table, what I cut |
 | [`ASSUMPTIONS.md`](ASSUMPTIONS.md) | every gap in the brief I filled, and a plain statement of what was executed and what was not |
 | [`docs/07-operating-model.md`](docs/07-operating-model.md) | who owns each control, the four numbers I would put on a dashboard, review cadence, and the failure modes that kill a control in month twelve |
@@ -130,7 +151,24 @@ It is not theoretical: gitleaks flags one real false positive in this repository
 is the captured end-to-end run — finding → signed waiver → derived allowlist →
 clean scan — with the commands to reproduce it.
 
-**The Kyverno suite has three fixtures, not two.** A broken manifest and a fixed
+**Three defects and one bug were found by reviewing this repository against
+itself, and all four are written up rather than quietly fixed.** The IAM policies
+carried their rationale in a top-level `_comment` key — a common convention that
+AWS rejects outright with `MalformedPolicyDocument`, so all five would have failed
+to apply ([`scripts/check_iam_policies.py`](scripts/check_iam_policies.py) now
+asserts they cannot regress). Every admission policy inspected `containers` and
+`initContainers` only, so `kubectl debug` walked straight past all of them
+([`restrict-ephemeral-containers.yaml`](policy/kyverno/policies/restrict-ephemeral-containers.yaml)).
+The waiver generator would emit a suppression for a waiver whose expiry did not
+parse. And `init-containers-restricted` was **rejecting compliant initContainers**
+because JMESPath treats `false` as falsy, so `false || \`true\`` is `true` — a
+false positive on the people who did what the policy asked, which is the failure
+mode that gets an admission controller uninstalled. That one is written up at
+length in [`docs/05-admission-rollout.md`](docs/05-admission-rollout.md), because
+no negative fixture can catch it: only a compliant fixture that must be ADMITTED
+can, and there now is one.
+
+**The Kyverno suite has seven fixtures, not two.** A broken manifest and a fixed
 one only prove the rules distinguish those two files.
 [`bypass-workload.yaml`](policy/kyverno/tests/resources/bypass-workload.yaml) is
 what the manifest looks like after somebody has read the policy names and tried to
@@ -138,6 +176,12 @@ satisfy them without changing the behaviour — digest-pinned but to Docker Hub,
 `runAsNonRoot: true` next to `runAsUser: 0`, `seccompProfile: Unconfined`,
 `secretKeyRef` instead of `envFrom`, `hostPath` renamed and pointed somewhere
 innocuous. It must still be rejected, and the suite asserts which rule catches each.
+
+Two of the remaining fixtures are there for the opposite reason — they must be
+**admitted**. `compliant-initcontainer.yaml` is the regression test for a rule that
+was too strict rather than too loose (see above), and `unhardened-tenant-pod.yaml`
+pins what `mutate-safe-defaults` does and, just as importantly, what it refuses to
+do to a workload that set a value on purpose.
 
 **The rules were tested against evasion, not just against the broken files.**
 `policy/fixtures/terraform/evasion/` is the fixture that separates a rule set from a
@@ -158,18 +202,6 @@ fails to stop ([`docs/05-egress.md`](docs/05-egress.md) — seven items), what t
 log redaction still leaks ([`docs/06`](docs/06-log-redaction.md) — seven items),
 and the one attack path I would currently not detect at all
 ([`DECISIONS.md`](DECISIONS.md) §4, with costed options to close it).
-
----
-
-## For the assessment form
-
-[`submission/SUBMISSION-GUIDE.md`](submission/SUBMISSION-GUIDE.md) maps every field
-on the assessment form to the exact file that answers it. The deliverables
-themselves are in `submission/files/` (native formats) and `submission/pdf/` (same
-content, typeset, for fields whose uploader only accepts PDF). Both are generated
-from this repository by `scripts/build-submission.py`, so they cannot drift from
-what is committed. [`submission/PUSH-TO-GITHUB.md`](submission/PUSH-TO-GITHUB.md)
-covers publishing and what a green pipeline should look like.
 
 ---
 

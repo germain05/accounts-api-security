@@ -1,0 +1,3 @@
+::error::SEC-1906-undateable: `expires` is missing or not a YYYY-MM-DD date — refusing to derive a suppression file from it
+
+FAIL: 1 waiver(s) with an unusable expiry; nothing generated.

@@ -71,6 +71,17 @@ elided, and the real fix (a mirrored TUF root and a private Fulcio/Rekor via
 | Kyverno: host namespaces, hostPath, RBAC wildcards, **privileged RoleBindings**, registries | **ENFORCE** cluster-wide | already enforced; each promoted on a 14-day dry-run whose violation counts are recorded in the policy annotations. |
 | Kyverno: security context, digest, signature, secrets-as-env | **ENFORCE** in `ns/accounts`, AUDIT elsewhere | per-policy criteria in [`docs/05-admission-rollout.md`](docs/05-admission-rollout.md); promoted namespace by namespace, never cluster-wide in one change. |
 | Kyverno: resource limits | AUDIT | deliberately not queued. Tenancy control, not security; `LimitRange` is the better fix. |
+| Kyverno: **ephemeral containers** (`kubectl debug`) | **ENFORCE** cluster-wide | already enforced. Unusually for this table it needed no audit period: it can only fire on an interactive human action, with a human present to read the rejection — it cannot break a deploy at 3am, which is the only reason the other policies get a grace period. |
+| Kyverno: **mutate safe defaults** | **ENFORCE (mutate)** | not a gate — the instrument that makes the four Audit rows above promotable. It defaults in what was unspecified and deliberately does *not* override an explicit value, so it shrinks the audit backlog to the workloads that genuinely conflict without silently changing anyone's stated intent. |
+
+The two rows added last are the ones I would draw a reviewer's attention to,
+because they came out of reviewing my own work rather than out of the brief. The
+ephemeral-container policy closes a hole every other policy in this repository
+had — they all inspect `spec.containers` and `spec.initContainers`, and
+`kubectl debug` writes to neither. The mutate policy is the answer to the
+objection that the rollout plan above is a plan to stay in Audit forever: without
+something that *fixes* the trivially-non-compliant majority, the day-15 violation
+count is never zero and the promotion never happens.
 
 **What counts as evidence that a gate is ready to promote.** Not "it has been in
 audit for a while". Three things, and the third is the one people skip: (i) a
@@ -93,8 +104,10 @@ step one. This is why I called container escape overrated.
 
 **Denied:** the node — no `hostPath`, no `hostNetwork`, no privilege escalation,
 `drop: ALL`, read-only root filesystem, distroless (no shell to land in). Other
-namespaces' secrets — the pod's Kubernetes RBAC grants one named ConfigMap and
-nothing else, and the DB credential never transits the Kubernetes API. The rest of
+namespaces' secrets — the pod mounts no Kubernetes API token at all
+(`automountServiceAccountToken: false`, which IRSA does not need), so the Role is
+not merely narrow but unpresentable; and the DB credential never transits the
+Kubernetes API. The rest of
 AWS — `iam:*` and `sts:AssumeRole` are explicitly denied, so no persistence and no
 role chaining; `aws:RequestedRegion` denies everything outside `ap-south-1`; and
 `aws:SourceVpce` makes the stolen credential inert from the attacker's own machine.

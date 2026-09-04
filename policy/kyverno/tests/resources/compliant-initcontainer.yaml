@@ -1,0 +1,46 @@
+# REGRESSION FIXTURE — added after review found a false positive.
+#
+# A fully compliant initContainer. The `init-containers-restricted` rule used to
+# REJECT this, because it wrote the "escalation must not be allowed" condition as
+#     {{ element.securityContext.allowPrivilegeEscalation || `true` }} == true
+# and JMESPath treats `false` as a falsy value — so an explicit
+# `allowPrivilegeEscalation: false` became `true` and the container was denied.
+#
+# That is the worst kind of policy bug: it does not weaken the control, it fires
+# on the people who did exactly what the policy asked. On a cluster shared with a
+# dozen other teams, a handful of those is all it takes for the platform team to
+# be asked to remove the admission controller — which is the failure mode
+# DECISIONS.md §2 is written around.
+#
+# The negative fixtures could never have caught it. This one must PASS.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: compliant-initcontainer
+  namespace: payments
+spec:
+  initContainers:
+    - name: schema-migrate
+      image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/migrate@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        privileged: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }
+  containers:
+    - name: api
+      image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@sha256:3f79b8e6b6e2c9d1c9f0a4a3e5d7c8b9a1f2e3d4c5b6a7988776655443322110
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        privileged: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }
+      resources:
+        requests: { cpu: "100m", memory: "128Mi" }
+        limits:   { cpu: "500m", memory: "256Mi" }

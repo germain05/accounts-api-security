@@ -1,0 +1,34 @@
+# Expected result of mutate-safe-defaults against `someone-elses-workload`,
+# pinned exactly. Asserted by kyverno-test.yaml.
+#
+# Why pin the patched output rather than merely assert "the rule ran": a mutate
+# policy that produces the WRONG patch still reports success. This file is what
+# makes the mutation reviewable — a change to any default below has to be made
+# here too, in a diff somebody reads.
+#
+# This is the cumulative effect of all three rules, which is also the honest
+# picture of what a tenant's pod looks like after admission:
+#   * allowPrivilegeEscalation defaulted to false   (security baseline)
+#   * pod-level seccompProfile defaulted to RuntimeDefault
+#   * resource requests defaulted                   (shared-cluster blast radius)
+# The `app.kubernetes.io/managed-by: kyverno` label is added by Kyverno itself.
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kyverno
+  name: someone-elses-workload
+  namespace: payments
+spec:
+  containers:
+    - image: 210987654321.dkr.ecr.ap-south-1.amazonaws.com/legacy@sha256:aa11bb22cc33dd44ee55ff66007788990011223344556677889900aabbccddee
+      name: app
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault

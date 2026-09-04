@@ -73,9 +73,16 @@ else
   failures=$((failures + 1))
 fi
 
+# ------------------------------------------------------------------ IAM
+# A policy AWS would reject is worse than no policy: it reviews as a control and
+# is not one. See iam/README.md for why the rationale is not in the JSON.
+section "IAM policy documents  (section 2 + 4c)"
+run "iam/*.json are schema-valid and appliable" iam-policy-check.txt \
+    python3 scripts/check_iam_policies.py
+
 # ------------------------------------------------------- Kubernetes admission
 section "Kyverno admission policies  (section 4a + 5)"
-run "kyverno test — 3 fixtures, 39 assertions" kyverno-test.txt \
+run "kyverno test — 7 fixtures, 46 assertions" kyverno-test.txt \
     kyverno test policy/kyverno/tests
 
 # ---------------------------------------------------------------- Terraform
@@ -97,16 +104,71 @@ run "good fixture must pass" conftest-good-fixture.txt \
 run "shipped terraform/ must pass" conftest-terraform.txt \
     conftest test --policy policy/rego --parser hcl2 --all-namespaces terraform/
 
+# The brief asks for `terraform validate`. It is a different question from the one
+# conftest answers — validate checks syntax and provider schema, conftest checks
+# whether the database is public — so both are run and neither substitutes for the
+# other. validate needs one network call to the provider registry for `init`,
+# which is why conftest and not validate is the BLOCKING gate. Not a silent skip:
+# if terraform is absent the suite says so and says what was and was not proven.
+printf '  %-58s' "terraform validate (syntax + provider schema)"
+if command -v terraform >/dev/null 2>&1; then
+  if ( cd terraform \
+       && terraform init -backend=false -input=false -no-color >"$OUT/terraform-init.txt" 2>&1 \
+       && terraform validate -no-color >"$OUT/terraform-validate-run.txt" 2>&1 ); then
+    printf '%sPASS%s\n' "$GREEN" "$OFF"
+  else
+    printf '%sFAIL%s  (see test-output/terraform-validate-run.txt)\n' "$RED" "$OFF"
+    failures=$((failures + 1))
+  fi
+else
+  printf '%sSKIP%s %s(terraform not installed; conftest above already gated this dir —\n' \
+    "$DIM" "$OFF" "$DIM"
+  printf '   %s a captured run is in test-output/terraform-validate.txt)%s\n' "" "$OFF"
+fi
+
 # ------------------------------------------------------------------ waivers
 section "Waiver mechanism  (section 3)"
 run "valid waivers: schema, approver, lifetime, expiry, signature" waiver-check.txt \
     python3 scripts/waiver_check.py check --verify-signatures
 
+# A HIGH waiver may live at most 30 days, so the live set genuinely lapses if this
+# repository is read long enough after it was written. That is the control, not a
+# bug — but it should say so where the reviewer is standing rather than only in the
+# README, because an unexplained red suite reads as a broken suite.
+if grep -q "EXPIRED" "$OUT/waiver-check.txt" 2>/dev/null; then
+  cat <<BANNER
+
+  ${DIM}┌─${OFF} a live waiver has lapsed ${DIM}────────────────────────────────────────${OFF}
+  ${DIM}│${OFF} This is the mechanism working: an expired waiver FAILS THE BUILD rather
+  ${DIM}│${OFF} than quietly continuing to suppress its finding. In a real repository the
+  ${DIM}│${OFF} fix is a renewal PR with fresh two-person approval and a fresh signature.
+  ${DIM}│${OFF}
+  ${DIM}│${OFF} To see the rest of the suite green as it stood on the submission date:
+  ${DIM}│${OFF}   ${GREEN}WAIVER_TODAY=2026-09-04 ./scripts/run-policy-tests.sh${OFF}
+  ${DIM}└──────────────────────────────────────────────────────────────────${OFF}
+BANNER
+fi
+
 run_expect_fail "expired / self-approved / over-cap / unwaivable-secret" waiver-check-invalid.txt \
     python3 scripts/waiver_check.py check --file waivers/fixtures/invalid-waivers.yaml
 
-run_expect_fail "post-approval edit of \`expires\` breaks the signature" waiver-check-tampered.txt \
+# Two halves of one assertion. The tampered fixture is the live SEC-2041 waiver
+# with a single signed field edited (`scope` widened to the whole namespace):
+#   * WITH signature verification it must FAIL,
+#   * WITHOUT it, it must PASS — which is what proves the rejection comes from the
+#     signature and not incidentally from some other rule. A negative fixture that
+#     fails for the wrong reason tests nothing.
+run_expect_fail "post-approval edit of a signed field breaks the signature" waiver-check-tampered.txt \
     python3 scripts/waiver_check.py check --file waivers/fixtures/tampered.yaml --verify-signatures
+
+run "...and that fixture passes every OTHER rule (isolates the signature)" waiver-check-tampered-control.txt \
+    python3 scripts/waiver_check.py check --file waivers/fixtures/tampered.yaml
+
+# generate must refuse to emit a suppression it cannot date. check() would already
+# have caught this, but generate is what writes the ignore files and does not get
+# to assume its caller was careful.
+run_expect_fail "generate fails closed on an undateable waiver" waiver-generate-failclosed.txt \
+    python3 scripts/waiver_check.py generate --file waivers/fixtures/invalid-waivers.yaml
 
 run "derived ignore files come only from ACTIVE waivers" waiver-generate.txt \
     python3 scripts/waiver_check.py generate

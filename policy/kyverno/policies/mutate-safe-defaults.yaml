@@ -1,0 +1,174 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: mutate-safe-defaults
+  annotations:
+    policies.kyverno.io/title: Default the restricted security context in, rather than rejecting for its absence
+    policies.kyverno.io/severity: medium
+    example-bank.io/threat: "T2 — supports the rollout of require-restricted-securitycontext"
+    # ---- rollout ----
+    example-bank.io/day-one-mode: "Enforce (mutate)"
+    example-bank.io/rationale: >-
+      This is the policy that makes the OTHER policies promotable. See the essay
+      below; the short version is that a mutation nobody notices is a better
+      rollout instrument than a rejection everybody argues about.
+
+    # Only mutate Pods, never the controllers that create them. Mutating a
+    # Deployment writes the change into the object Helm/Argo owns, so the next
+    # sync diffs against it forever and the platform team gets blamed for
+    # "GitOps drift". Mutating the Pod leaves the controller's spec untouched.
+    pod-policies.kyverno.io/autogen-controllers: none
+
+spec:
+  # A mutate policy has no validationFailureAction — it does not reject anything.
+  # That is the entire point.
+  background: false
+  rules:
+    # -------------------------------------------------------------------------
+    # WHY THIS EXISTS — the rollout problem, which is the harder half.
+    #
+    # `require-restricted-securitycontext` ships in Audit outside ns/accounts
+    # because enforcing it on day one would reject workloads belonging to twelve
+    # teams who did not ask for it. The stated plan is 14 days of audit, then
+    # promotion. That plan has a well-known failure mode: on day 15 the violation
+    # count is not zero, because "audit" produces a report nobody is paged for,
+    # and the promotion slips indefinitely. The policy stays in audit for a year
+    # and protects nothing.
+    #
+    # Mutation breaks that deadlock. For the large majority of workloads the
+    # missing fields are missing because nobody thought about them, not because
+    # the workload needs the permission. Defaulting those in:
+    #
+    #   * shrinks the audit-mode violation list to the workloads that genuinely
+    #     conflict — which is a list short enough to hold a conversation about,
+    #     and it is the "enumerate reality, then enforce the enumeration"
+    #     evidence standard in DECISIONS.md §2;
+    #   * makes the eventual promotion to Enforce a no-op for everyone already
+    #     being mutated, so the change that would have broken twelve teams breaks
+    #     nobody;
+    #   * fixes the workloads rather than merely reporting them, which is the
+    #     difference between a security team that files tickets and one that
+    #     ships outcomes.
+    #
+    # THE HONEST CAVEAT, because this control is easy to over-read: mutation is
+    # NOT enforcement. It changes what was not specified; it does not stop a team
+    # that explicitly sets `allowPrivilegeEscalation: true` — every rule below
+    # steps aside for an explicit value rather than overriding it. That is
+    # deliberate: silently reversing an author's stated intent produces a
+    # workload that does not do what its manifest says, which is worse than a
+    # rejection. Catching the explicit case is `require-restricted-securitycontext`'s
+    # job, and it is why that policy still has to be promoted rather than replaced
+    # by this one. Mutation buys the rollout; validation is still the control.
+    - name: default-allow-privilege-escalation-false
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      preconditions:
+        all:
+          # CREATE only. Mutating on UPDATE fights with controllers that re-apply
+          # the pod spec and produces an admission loop.
+          - key: "{{ request.operation || 'BACKGROUND' }}"
+            operator: Equals
+            value: CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.containers[]
+            preconditions:
+              all:
+                # Leave an explicit value alone — see the caveat above.
+                # to_string() so that an explicit `false` is recognised as a
+                # stated value rather than collapsing to falsy and being treated
+                # as absent. Same JMESPath trap the validate rules hit.
+                - key: "{{ to_string(element.securityContext.allowPrivilegeEscalation) }}"
+                  operator: Equals
+                  value: "null"
+                # A privileged container with allowPrivilegeEscalation:false is
+                # rejected by the kubelet as contradictory. Do not create that.
+                - key: "{{ to_string(element.securityContext.privileged) }}"
+                  operator: NotEquals
+                  value: "true"
+            patchesJson6902: |-
+              - path: /spec/containers/{{elementIndex}}/securityContext/allowPrivilegeEscalation
+                op: add
+                value: false
+          - list: request.object.spec.initContainers[]
+            preconditions:
+              all:
+                - key: "{{ to_string(element.securityContext.allowPrivilegeEscalation) }}"
+                  operator: Equals
+                  value: "null"
+                - key: "{{ to_string(element.securityContext.privileged) }}"
+                  operator: NotEquals
+                  value: "true"
+            patchesJson6902: |-
+              - path: /spec/initContainers/{{elementIndex}}/securityContext/allowPrivilegeEscalation
+                op: add
+                value: false
+
+    # -------------------------------------------------------------------------
+    - name: default-seccomp-runtime-default
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      preconditions:
+        all:
+          - key: "{{ request.operation || 'BACKGROUND' }}"
+            operator: Equals
+            value: CREATE
+          # Only when the pod sets no profile at all. If it set Unconfined on
+          # purpose, that is an explicit choice for the validate policy to reject,
+          # not something to paper over here.
+          - key: "{{ to_string(request.object.spec.securityContext.seccompProfile.type) }}"
+            operator: Equals
+            value: "null"
+      mutate:
+        patchStrategicMerge:
+          spec:
+            securityContext:
+              seccompProfile:
+                type: RuntimeDefault
+
+    # -------------------------------------------------------------------------
+    # Not a security control — a blast-radius control, and the one the other
+    # twelve teams actually feel. An unbounded pod on a shared node evicts its
+    # neighbours. DECISIONS.md §2 lists `require-resource-limits` as deliberately
+    # never queued for Enforce because a LimitRange is the better tool; this is
+    # the cheap half of that, applied where a LimitRange has not been set up.
+    - name: default-resource-requests
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch, accounts]
+      preconditions:
+        all:
+          - key: "{{ request.operation || 'BACKGROUND' }}"
+            operator: Equals
+            value: CREATE
+      mutate:
+        foreach:
+          - list: request.object.spec.containers[]
+            preconditions:
+              all:
+                - key: "{{ to_string(element.resources.requests) }}"
+                  operator: Equals
+                  value: "null"
+            patchesJson6902: |-
+              - path: /spec/containers/{{elementIndex}}/resources/requests
+                op: add
+                value:
+                  cpu: "50m"
+                  memory: "64Mi"

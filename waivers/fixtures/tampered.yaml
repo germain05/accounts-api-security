@@ -1,22 +1,31 @@
-# Negative fixture: SEC-2041 with `expires` edited after approval.
-# The lifetime cap still passes and the date is still in the future, so only
-# the signature catches this. run-policy-tests.sh asserts it FAILS.
+# Negative fixture: the live SEC-2041 waiver with ONE signed field edited after
+# approval — `scope` widened from `golang.org/x/crypto/ssh` to `golang.org/x/`,
+# which would silently suppress every finding in the namespace rather than the one
+# module that was actually analysed.
+#
+# This is the fixture that proves the signature is load-bearing. Every other rule
+# in waiver_check.py passes on this file: the schema is complete, the approver has
+# HIGH authority, requested_by != approved_by, the lifetime is inside the 30d cap
+# and the expiry is in the future. The ONLY thing that rejects it is the cosign
+# signature over the canonical body, which was made over `scope:
+# golang.org/x/crypto/ssh`.
+#
+# scripts/run-policy-tests.sh asserts this file FAILS.
 version: 1
 waivers:
 - id: SEC-2041-trivy-CVE-2024-45337
   tool: trivy
   finding: CVE-2024-45337
-  scope: golang.org/x/crypto/ssh
+  scope: golang.org/x/
   severity: HIGH
   class: not-exploitable
-  reason: golang.org/x/crypto is pulled in transitively by the AWS SDK's SSO credential
-    provider. accounts-api never opens an SSH connection and the vulnerable ServerConfig.PublicKeyCallback
-    path is unreachable from any entrypoint; confirmed with `go mod why` and a callgraph
-    check over cmd/ and internal/.
+  reason: golang.org/x/crypto is pulled in transitively by the AWS SDK's SSO credential provider. accounts-api
+    never opens an SSH connection and the vulnerable ServerConfig.PublicKeyCallback path is unreachable
+    from any entrypoint; confirmed with `go mod why` and a callgraph check over cmd/ and internal/.
   compensating_control: Egress NetworkPolicy denies port 22 outbound; Falco rule accounts_api_unexpected_egress
     fires on any non-443 socket from the pod.
   ticket: SEC-2041
   requested_by: r.mehta@example-bank.com
   approved_by: p.okafor@example-bank.com
-  created: 2026-08-28
-  expires: '2026-09-25'
+  created: 2026-09-04
+  expires: 2026-10-04

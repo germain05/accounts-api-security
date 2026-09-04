@@ -64,19 +64,33 @@ assumption is wrong, the control moves, the argument does not.
 
 ## What was actually executed, and what was not
 
-**Executed, output committed in `test-output/`:** `kyverno test` (39 assertions),
-`conftest verify` (33 unit tests), `conftest test` against the shipped Terraform
-and all three fixtures, the waiver checker including real cosign signature
-verification, and a real gitleaks scan of this repository whose single finding was
-processed through the waiver path end to end.
+**Executed, output committed in `test-output/`:** `kyverno test` (46 assertions
+across 7 fixtures), `conftest verify` (33 unit tests), `conftest test` against the
+shipped Terraform and all three fixtures, `terraform fmt -check` and
+`terraform validate` against `terraform/`, the IAM policy-document schema check,
+the waiver checker including real cosign signature verification, and a real
+gitleaks scan of this repository's full history whose single finding was processed
+through the waiver path end to end.
 
 **Executed on GitHub if you push this repo:** `build-release.yml` builds the image,
 generates the SBOM, keyless-signs it, attests the SBOM and verifies both — against
 GHCR, with no AWS account and no secrets. That is a real green run, not a diagram.
 
 **Not executed, and marked as such wherever it is claimed:** anything requiring an
-AWS account. No `terraform apply`, no EKS cluster, no CloudTrail, no Secrets
-Manager. `terraform init`/`validate` are also *not* run, because the provider
-registry is unreachable offline — which is why `conftest --parser hcl2` is the
-blocking IaC gate rather than `terraform validate`. The trade is documented in the
-README's tool-substitution table.
+AWS account. **No `terraform apply`**, no EKS cluster, no CloudTrail, no Secrets
+Manager, no ECR, no Kyverno running in a real cluster.
+
+`terraform init -backend=false` and `terraform validate` *were* run and both pass
+(captured in `test-output/terraform-validate.txt`). `init` needs one network call
+to the provider registry, which is the reason `conftest --parser hcl2` and not
+`validate` is the **blocking** IaC gate: the merge decision should not depend on a
+registry being reachable. They also answer different questions — `validate` checks
+syntax and provider schema, `conftest` checks whether the database is public — so
+both run and neither substitutes for the other.
+
+One consequence worth stating plainly: because nothing was applied, the
+**Kyverno signature-verification policy has never verified a real signature**, and
+the ECR tag-immutability setting has never been exercised. Both are authored as
+they would ship and both are honestly flagged — `verify-image-signature` carries
+no assertion in the offline suite rather than a fabricated passing one, and the
+GHCR downgrade is named in `DECISIONS.md`.

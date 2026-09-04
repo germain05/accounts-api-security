@@ -18,8 +18,12 @@
 | `waivers/waivers.yaml` + `scripts/waiver_check.py` | (meta) | keeps the gates above alive; an unwaivable gate is a disabled gate |
 | `docs/03-break-glass.md` | (meta) | the one bypass, time-boxed and audited, so nobody invents an unaudited one |
 | `remediate/workload-fixed.yaml` | T2 | removes docker.sock, hostNetwork, root, RBAC wildcards |
-| `policy/kyverno/policies/*` (9 policies) | T2, T4 | structural prevention of the same manifest being reintroduced |
+| `policy/kyverno/policies/*` (11 policies) | T2, T4 | structural prevention of the same manifest being reintroduced |
 | `policy/kyverno/policies/restrict-privileged-rolebindings.yaml` | T2 | closes the second-order bypass the RBAC fix creates: binding to the `cluster-admin` ClusterRole needs no wildcard of your own |
+| `policy/kyverno/policies/restrict-ephemeral-containers.yaml` | T2 | closes the `kubectl debug` bypass: an ephemeral container is in neither `containers[]` nor `initContainers[]` and arrives via the `pods/ephemeralcontainers` subresource, so every other policy here was blind to it. Found in review, not in the brief |
+| `policy/kyverno/policies/mutate-safe-defaults.yaml` | T2 (rollout) | defaults the baseline in for the other twelve teams so the promotion of `require-restricted-securitycontext` to Enforce is a no-op rather than an incident. Mutation is not enforcement — the policy says so in its own comments |
+| `policy/kyverno/tests/resources/compliant-initcontainer.yaml` | T2 (regression) | a *compliant* initContainer that must be ADMITTED. Added after review found the rule denying it — the JMESPath `false \|\| true` trap. Negative fixtures cannot catch a false positive |
+| `scripts/check_iam_policies.py` | T1, T2 (meta) | asserts every document in `iam/` is one AWS would actually accept. A policy that fails to apply reviews as a control and is not one |
 | `policy/kyverno/tests/resources/bypass-workload.yaml` | T2, T4 | proves the rules resist someone who has read the rule names, not just the broken manifest |
 | `policy/fixtures/terraform/evasion/` | T3 | proves the IaC rules survive `var`-driven values, `dynamic` blocks, IPv6 and Aurora — the shapes that defeat a naive rule set |
 | `iam/external-secrets-policy.json` | T2 | keeps the secrets operator's breadth out of the workload's identity |

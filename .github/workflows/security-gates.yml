@@ -259,6 +259,11 @@ jobs:
           tar -xzf /tmp/conftest.tgz -C /usr/local/bin conftest
           conftest --version
 
+      # An IAM document with a stray top-level key is rejected by AWS at apply
+      # time, not at review time. This keeps that failure in the pipeline.
+      - name: IAM policy documents are schema-valid
+        run: python3 scripts/check_iam_policies.py
+
       - name: conftest — unit tests for the policies themselves
         run: conftest test --policy policy/rego --parser hcl2 --all-namespaces policy/fixtures/terraform/good/ && conftest verify --policy policy/rego
 

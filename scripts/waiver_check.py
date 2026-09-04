@@ -274,7 +274,23 @@ def check(waivers: list[dict], today: date, verify_sigs: bool) -> int:
 
 
 def generate(waivers: list[dict], today: date) -> int:
-    active = [w for w in waivers if (_as_date(w["expires"]) or today) >= today]
+    # Fail closed on anything this function cannot prove is still in date.
+    # `check` runs before `generate` in the pipeline and would already have
+    # rejected these, but `generate` is what actually writes the suppression
+    # files — so it does not get to assume its caller was careful. A waiver whose
+    # `expires` will not parse is treated as expired, not as active, and the run
+    # fails rather than silently emitting a suppression with no end date.
+    unparseable = [str(w.get("id", "<no id>")) for w in waivers
+                   if _as_date(w.get("expires")) is None]
+    if unparseable:
+        for wid in unparseable:
+            print(f"::error::{wid}: `expires` is missing or not a YYYY-MM-DD date — "
+                  f"refusing to derive a suppression file from it")
+        print(f"\nFAIL: {len(unparseable)} waiver(s) with an unusable expiry; "
+              f"nothing generated.")
+        return 1
+
+    active = [w for w in waivers if _as_date(w["expires"]) >= today]
 
     trivy = [f"{w['finding']}  # {w['ticket']} {w['approved_by']} exp {w['expires']}"
              for w in active if w["tool"] == "trivy"]

@@ -1,9 +1,4 @@
 {
-  "_comment": [
-    "accounts-api pod identity role — the policy I would actually ship. Section 4c.",
-    "Replaces a NotAction/Allow blanket (iam/pod-identity-policy-original.json).",
-    "Threat T2. Rationale and the one-line diff statement: docs/04-findings.md."
-  ],
   "Version": "2012-10-17",
   "Statement": [
     {

@@ -100,3 +100,21 @@ waivers:
     approved_by: p.okafor@example-bank.com
     created: 2026-09-01
     expires: 2026-09-15
+
+  # 7. UNDATEABLE EXPIRY. A waiver with no usable end date is a permanent
+  #    suppression wearing an expiry field. `check` rejects the malformed date;
+  #    `generate` independently refuses to derive an ignore file from it, so the
+  #    suppression cannot be written even if this file reached generate directly.
+  - id: SEC-1906-undateable
+    tool: trivy
+    finding: CVE-2026-33333
+    scope: app/vendor/
+    severity: MEDIUM
+    class: fix-in-flight
+    reason: "Upstream has merged the patch but has not yet tagged a release we can pin to."
+    compensating_control: "Vulnerable code path is behind a feature flag that is off in production."
+    ticket: SEC-1906
+    requested_by: r.mehta@example-bank.com
+    approved_by: p.okafor@example-bank.com
+    created: 2026-09-01
+    expires: "when the upstream fix lands"

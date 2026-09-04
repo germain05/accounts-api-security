@@ -19,6 +19,12 @@ policy/rego/data.waivers.json
 *.key
 cosign.key
 
+# The form-filling pack (per-field bundles + PDFs) is a working aid for the
+# online assessment form, not engineering work. It duplicates content that is
+# already in this repo, so it is built OUTSIDE the tree and never committed:
+#   ../mal-assessment-formpack/
+submission/
+
 # local tooling
 bin/
 *.tar.gz
