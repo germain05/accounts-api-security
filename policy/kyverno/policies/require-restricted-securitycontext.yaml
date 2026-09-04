@@ -139,3 +139,45 @@ spec:
               - securityContext:
                   seccompProfile:
                     type: "RuntimeDefault | Localhost"
+
+    # initContainers are a blind spot in most baselines. Kyverno's autogen rewrites
+    # `spec.containers` for controllers, but a rule written only against
+    # `containers` never looks at `initContainers` — so a privileged init step that
+    # writes to a shared emptyDir and exits is admitted, and it has already done
+    # whatever it came to do by the time the main container starts.
+    - name: init-containers-restricted
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      preconditions:
+        all:
+          - key: "{{ length(request.object.spec.initContainers || `[]`) }}"
+            operator: GreaterThan
+            value: 0
+      validate:
+        message: >-
+          initContainers are held to the same baseline as containers: non-root, no
+          privilege escalation, not privileged, all capabilities dropped. [T2/A4]
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.securityContext.privileged || `false` }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ element.securityContext.allowPrivilegeEscalation || `true` }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ element.securityContext.runAsNonRoot || `false` }}"
+                    operator: NotEquals
+                    value: true
+                  - key: "{{ element.securityContext.runAsUser || `-1` }}"
+                    operator: Equals
+                    value: 0
+

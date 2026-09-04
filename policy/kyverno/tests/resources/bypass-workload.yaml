@@ -55,3 +55,36 @@ spec:
           hostPath:
             path: /var/tmp/accounts-cache
             type: DirectoryOrCreate
+      # An init container that does the privileged work and exits before anyone
+      # looks at the main container. Most baselines only inspect `containers`.
+      initContainers:
+        - name: setup
+          # digest is a syntactically valid placeholder, not a real busybox digest —
+          # nothing resolves it and inventing a plausible one would be a lie in a
+          # test fixture. The point of the line is the shape, not the image.
+          image: docker.io/library/busybox@sha256:0000000000000000000000000000000000000000000000000000000000000001
+          securityContext:
+            privileged: true
+            runAsUser: 0
+            allowPrivilegeEscalation: true
+          command: ["sh", "-c", "cp /usr/bin/nc /shared/ && chmod 4755 /shared/nc"]
+          volumeMounts:
+            - name: cache
+              mountPath: /shared
+---
+# The second-order RBAC bypass: no wildcard anywhere in the tenant's own manifest,
+# because the wildcard is in the cluster-admin ClusterRole that Kubernetes ships.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: accounts-api-bypass
+  namespace: accounts
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: accounts-api
+    namespace: accounts
+

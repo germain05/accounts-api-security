@@ -46,6 +46,10 @@ flowchart LR
   NS <-.->|B8 shared node / cluster RBAC| OTHER
 ```
 
+<!-- Rendered fallback for viewers that do not draw Mermaid (PDF, some editors).
+     Regenerate both with: scripts/render-diagrams.sh -->
+![Trust boundaries for accounts-api](docs/img/trust-boundaries.svg)
+
 | id | boundary | crossing principal |
 |----|----------|--------------------|
 | B1 | internet → edge | anonymous, then authenticated customer |

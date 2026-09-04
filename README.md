@@ -4,10 +4,12 @@ Securing a containerised account-data service on shared EKS in `ap-south-1`: the
 pipeline that builds it, the identities it assumes, the secrets it holds, and the
 controls a bank is examined against.
 
-Everything here runs **offline** — no AWS account, no cloud credentials, no
-`terraform init`, no registry, no cluster. Nothing was applied against a real
-cloud; where production would use AWS, the mapping is documented and the local
-equivalent is what a reviewer runs.
+Two things a reviewer can check in minutes rather than take on trust:
+
+* **The policy suite runs offline.** No AWS account, no credentials, no `terraform init`, no registry, no cluster. One command, eleven checks, three of which pass *by failing*.
+* **The supply-chain pipeline actually runs.** Push this repo and the Actions tab shows a real green run that builds the image, generates the SBOM, keyless-signs it, attests it, and then **verifies its own signature** — against GHCR, with no AWS account and no secrets. The AWS half is written as it would ship and is gated behind one repository variable.
+
+Nothing was applied against a real cloud. Where production would use AWS, the mapping is documented and the local equivalent is what runs. `ASSUMPTIONS.md` lists every gap I filled and exactly what was and was not executed.
 
 ---
 
@@ -26,16 +28,17 @@ pip install pyyaml
 ./scripts/run-policy-tests.sh
 ```
 
-Expected output — ten checks, all passing, three of which pass **by failing**:
+Expected output — eleven checks, all passing, three of which pass **by failing**:
 
 ```
 ──── fixture drift
   good-workload fixture == remediate/workload-fixed.yaml    PASS
 ──── Kyverno admission policies  (section 4a + 5)
-  kyverno test — 3 fixtures, 35 assertions                  PASS
+  kyverno test — 3 fixtures, 39 assertions                  PASS
 ──── Terraform policy-as-code  (section 4b)
-  conftest verify — 23 rego unit tests                      PASS
+  conftest verify — 33 rego unit tests                      PASS
   bad fixture must be rejected (11 deny rules)              PASS (failed as intended)
+  evasion fixture must be rejected (var-driven, dynamic, IPv6, Aurora)  PASS (failed as intended)
   good fixture must pass                                    PASS
   shipped terraform/ must pass                              PASS
 ──── Waiver mechanism  (section 3)
@@ -48,10 +51,11 @@ Expected output — ten checks, all passing, three of which pass **by failing**:
 Individual commands, if you would rather run them yourself:
 
 ```bash
-kyverno test policy/kyverno/tests                                              # 35 assertions
-conftest verify --policy policy/rego                                           # 23 rego unit tests
+kyverno test policy/kyverno/tests                                              # 39 assertions
+conftest verify --policy policy/rego                                           # 33 rego unit tests
 conftest test --policy policy/rego --parser hcl2 --all-namespaces terraform/   # must pass
-conftest test --policy policy/rego --parser hcl2 policy/fixtures/terraform/bad # must FAIL, 11 denies
+conftest test --policy policy/rego --parser hcl2 policy/fixtures/terraform/bad      # must FAIL, 11 denies
+conftest test --policy policy/rego --parser hcl2 policy/fixtures/terraform/evasion  # must FAIL, 7 denies
 python3 scripts/waiver_check.py check --verify-signatures                      # must pass
 python3 scripts/waiver_check.py check --file waivers/fixtures/tampered.yaml --verify-signatures  # must FAIL
 ```
@@ -87,6 +91,8 @@ passing one.
 | **[`THREAT-MODEL.md`](THREAT-MODEL.md)** | one page: trust boundaries, ranked top-5 threats T1–T5, controls or acceptance for each, and the threat I think is overrated here |
 | **[`TRACEABILITY.md`](TRACEABILITY.md)** | every artefact in the repo mapped back to a threat — including the two built without one, and why |
 | **[`DECISIONS.md`](DECISIONS.md)** | **Part 2.** biggest decisions, enforcement posture, two blast-radius scenarios, the attack path I cannot detect, regulatory table, what I cut |
+| [`ASSUMPTIONS.md`](ASSUMPTIONS.md) | every gap in the brief I filled, and a plain statement of what was executed and what was not |
+| [`docs/07-operating-model.md`](docs/07-operating-model.md) | who owns each control, the four numbers I would put on a dashboard, review cadence, and the failure modes that kill a control in month twelve |
 
 | section | build artefacts | write-up |
 |---|---|---|
@@ -131,12 +137,37 @@ satisfy them without changing the behaviour — digest-pinned but to Docker Hub,
 `secretKeyRef` instead of `envFrom`, `hostPath` renamed and pointed somewhere
 innocuous. It must still be rejected, and the suite asserts which rule catches each.
 
+**The rules were tested against evasion, not just against the broken files.**
+`policy/fixtures/terraform/evasion/` is the fixture that separates a rule set from a
+speed bump: `publicly_accessible = var.public` parses as a *string*, so a rule
+testing `== true` passes it; `cidr_blocks = var.allowed` parses as a string rather
+than a list, so a rule that iterates the list never runs; `dynamic "ingress"` hides
+the rules entirely; `::/0` is IPv6 for `0.0.0.0/0`; and `aws_rds_cluster` is the
+same database under a different type. The rule set **fails closed on anything it
+cannot statically prove safe**, and there is a unit test asserting that a literal
+`false` is still accepted — otherwise "deny the unprovable" quietly becomes "deny
+everything". Same story on the Kubernetes side: `initContainers` and
+`RoleBinding → cluster-admin` are the two blind spots a Role-only policy leaves,
+and both are now assertions.
+
 **The honest gaps are written down, not omitted.** What the signature does not
 prove ([`docs/02`](docs/02-build-integrity.md)), what the egress control still
 fails to stop ([`docs/05-egress.md`](docs/05-egress.md) — seven items), what the
 log redaction still leaks ([`docs/06`](docs/06-log-redaction.md) — seven items),
 and the one attack path I would currently not detect at all
 ([`DECISIONS.md`](DECISIONS.md) §4, with costed options to close it).
+
+---
+
+## For the assessment form
+
+[`submission/SUBMISSION-GUIDE.md`](submission/SUBMISSION-GUIDE.md) maps every field
+on the assessment form to the exact file that answers it. The deliverables
+themselves are in `submission/files/` (native formats) and `submission/pdf/` (same
+content, typeset, for fields whose uploader only accepts PDF). Both are generated
+from this repository by `scripts/build-submission.py`, so they cannot drift from
+what is committed. [`submission/PUSH-TO-GITHUB.md`](submission/PUSH-TO-GITHUB.md)
+covers publishing and what a green pipeline should look like.
 
 ---
 

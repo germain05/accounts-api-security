@@ -21,6 +21,14 @@ Prevention is the graded half, so each finding names the policy that structurall
 
 Fixed manifest: **[`remediate/workload-fixed.yaml`](../remediate/workload-fixed.yaml)**.
 
+**Prevention beyond the listed defects.** Fixing A1 by narrowing the Role publishes
+its own bypass: a tenant who can no longer write `verbs: ["*"]` can bind their
+ServiceAccount to the `cluster-admin` ClusterRole that Kubernetes ships, with no
+wildcard anywhere in their manifest. So
+[`restrict-privileged-rolebindings.yaml`](../policy/kyverno/policies/restrict-privileged-rolebindings.yaml)
+ships *with* the wildcard policy, not after it. The same reasoning produced the
+`initContainers` rule — see `docs/05-admission-rollout.md`, "two blind spots".
+
 ---
 
 ## (b) Terraform — `policy/fixtures/terraform/bad/main.tf`
@@ -36,6 +44,21 @@ Fixed manifest: **[`remediate/workload-fixed.yaml`](../remediate/workload-fixed.
 Also fixed but not separately ranked: no `iam_database_authentication_enabled`, no `performance_insights` KMS key, no `monitoring_interval`, no `ca_cert_identifier` pin, no `auto_minor_version_upgrade`, trail bucket with no bucket policy, no Object Lock, no access logging.
 
 Fixed configuration: **[`terraform/`](../terraform)** (`rds.tf`, `security_groups.tf`, `cloudtrail.tf`, `kms.tf`, `ecr.tf`).
+
+**The rules had to survive the second version of the same mistake.** A rule that
+tests `publicly_accessible == true` passes `publicly_accessible = var.public`,
+because the HCL parser hands the policy the string `"${var.public}"`. Likewise
+`cidr_blocks = var.allowed` arrives as a *string*, so a rule that iterates the list
+never executes; `dynamic "ingress"` hides the rules entirely; `::/0` is the IPv6
+spelling of `0.0.0.0/0`; and `aws_rds_cluster` is the same database under a
+different resource type. Each of those is a way this exact defect ships again with
+a green pipeline, so the rule set **fails closed on values it cannot statically
+prove safe** and the shapes are committed as
+[`policy/fixtures/terraform/evasion/`](../policy/fixtures/terraform/evasion). One
+more trap worth naming because it is invisible in review: `body.backup_retention_period < 7`
+is *undefined* in Rego when the attribute is absent, so the rule silently passes a
+resource that never set it — the omission case, which is the one that actually
+happens. Every comparison now goes through `object.get(body, field, default)`.
 
 ---
 

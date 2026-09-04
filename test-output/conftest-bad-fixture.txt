@@ -5,10 +5,10 @@
 [31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_cloudtrail_unencrypted: aws_cloudtrail.org writes unencrypted log files. [B5]
 [31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_open_ingress: aws_security_group_rule.db_ingress allows ingress on 5432-5432 from 0.0.0.0/0. Use source_security_group_id; a CIDR is a claim about the network, an SG id is a claim about identity. [T3/B1]
 [31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_rds_inline_password: aws_db_instance.accounts sets `password`, which is stored in PLAINTEXT in Terraform state. Use manage_master_user_password=true (RDS-managed secret) and iam_database_authentication_enabled=true for the app path. [T3/B2]
-[31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_rds_no_backups: aws_db_instance.accounts has backup_retention_period=0. Minimum 7 days; a destructive attacker or a bad migration is unrecoverable below that. [T3/B4]
+[31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_rds_no_backups: aws_db_instance.accounts has backup_retention_period=0 (attribute absent counts as 0). Minimum 7 days; a destructive attacker or a bad migration is unrecoverable below that. [T3/B4]
 [31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_rds_no_deletion_protection: aws_db_instance.accounts has no deletion_protection. [T3/B4]
 [31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_rds_no_final_snapshot: aws_db_instance.accounts has skip_final_snapshot=true. Deletion becomes irreversible. [T3/B4]
 [31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_rds_publicly_accessible: aws_db_instance.accounts has publicly_accessible=true. A production database holding PII must have no public endpoint. [T3/B1]
 [31mFAIL[0m - policy/fixtures/terraform/bad/main.tf - main - deny_rds_unencrypted: aws_db_instance.accounts is unencrypted at rest. This cannot be enabled in place — it requires a snapshot/restore/cutover — so it must be right at creation. [T3/B3]
 
-[31m17 tests, 5 passed, 1 warning, 11 failures, 0 exceptions[0m
+[31m25 tests, 13 passed, 1 warning, 11 failures, 0 exceptions[0m

@@ -68,7 +68,7 @@ elided, and the real fix (a mirrored TUF root and a private Fulcio/Rekor via
 | SCA — unfixable | WARN | promotes only if the distroless migration lands and the standing backlog is under 10. |
 | SAST (Semgrep ERROR) | WARN | 2 consecutive weeks of zero findings later triaged as false positives, backlog < 10 each with an owner, median PR-to-green not moved > 20%. Announced date 2026-10-15; if the evidence does not hold, the *ruleset* shrinks and the gate promotes anyway. |
 | Checkov | WARN permanently | never. One tool owns the merge decision; the second exists for coverage. Two blocking IaC scanners means two rulesets disagreeing and an engineer who cannot tell which to satisfy. |
-| Kyverno: host namespaces, hostPath, RBAC wildcards, registries | **ENFORCE** cluster-wide | already enforced; each promoted on a 14-day dry-run whose violation counts are recorded in the policy annotations. |
+| Kyverno: host namespaces, hostPath, RBAC wildcards, **privileged RoleBindings**, registries | **ENFORCE** cluster-wide | already enforced; each promoted on a 14-day dry-run whose violation counts are recorded in the policy annotations. |
 | Kyverno: security context, digest, signature, secrets-as-env | **ENFORCE** in `ns/accounts`, AUDIT elsewhere | per-policy criteria in [`docs/05-admission-rollout.md`](docs/05-admission-rollout.md); promoted namespace by namespace, never cluster-wide in one change. |
 | Kyverno: resource limits | AUDIT | deliberately not queued. Tenancy control, not security; `LimitRange` is the better fix. |
 

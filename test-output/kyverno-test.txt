@@ -3,49 +3,53 @@ Loading test  ( policy/kyverno/tests/kyverno-test.yaml ) ...
   Loading policies ...
   Loading resources ...
   Loading exceptions ...
-  Applying 8 policies to 7 resources ...
+  Applying 9 policies to 8 resources ...
   Checking results ...
 
-│──────────│────────────────────────────────────│─────────────────────────────────│────────────────────────────────│────────│────────│
-│ [40;32mID (35) [0m │ [40;32mPOLICY                            [0m │ [40;32mRULE                           [0m │ [40;32mRESOURCE                      [0m │ [40;32mRESULT[0m │ [40;32mREASON[0m │
-│──────────│────────────────────────────────────│─────────────────────────────────│────────────────────────────────│────────│────────│
-│ 1        │ disallow-host-namespaces           │ autogen-host-namespaces         │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 2        │ disallow-host-namespaces           │ autogen-host-namespaces         │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 3        │ disallow-hostpath                  │ autogen-no-hostpath-volumes     │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 4        │ disallow-hostpath                  │ autogen-no-hostpath-volumes     │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 5        │ require-restricted-securitycontext │ autogen-run-as-non-root         │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 6        │ require-restricted-securitycontext │ autogen-no-privilege-escalation │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 7        │ require-restricted-securitycontext │ autogen-drop-all-capabilities   │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 8        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 9        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 10       │ require-restricted-securitycontext │ autogen-run-as-non-root         │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 11       │ require-restricted-securitycontext │ autogen-no-uid-zero             │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 12       │ require-restricted-securitycontext │ autogen-no-uid-zero             │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 13       │ require-image-digest               │ autogen-image-must-be-digest    │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 14       │ require-image-digest               │ autogen-image-must-be-digest    │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 15       │ restrict-registries                │ autogen-allowed-registries      │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 16       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom       │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 17       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom       │ Deployment/accounts-api-bypass │ Pass   │ Ok     │
-│ 18       │ require-resource-limits            │ autogen-limits-required         │ Deployment/accounts-api-legacy │ Pass   │ Ok     │
-│ 19       │ restrict-rbac-wildcards            │ no-wildcard-verbs               │ Role/accounts-api-legacy       │ Pass   │ Ok     │
-│ 20       │ restrict-rbac-wildcards            │ secrets-need-named-resources    │ Role/accounts-api-legacy       │ Pass   │ Ok     │
-│ 21       │ disallow-host-namespaces           │ autogen-host-namespaces         │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 22       │ disallow-hostpath                  │ autogen-no-hostpath-volumes     │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 23       │ require-restricted-securitycontext │ autogen-run-as-non-root         │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 24       │ require-restricted-securitycontext │ autogen-no-privilege-escalation │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 25       │ require-restricted-securitycontext │ autogen-drop-all-capabilities   │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 26       │ require-restricted-securitycontext │ autogen-seccomp-runtime-default │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 27       │ require-image-digest               │ autogen-image-must-be-digest    │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 28       │ restrict-registries                │ autogen-allowed-registries      │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 29       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom       │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 30       │ require-resource-limits            │ autogen-limits-required         │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 31       │ restrict-rbac-wildcards            │ no-wildcard-verbs               │ Role/accounts-api              │ Pass   │ Ok     │
-│ 32       │ restrict-rbac-wildcards            │ secrets-need-named-resources    │ Role/accounts-api              │ Pass   │ Ok     │
-│ 33       │ require-restricted-securitycontext │ autogen-no-uid-zero             │ Deployment/accounts-api        │ Pass   │ Ok     │
-│ 34       │ restrict-rbac-wildcards            │ no-wildcard-resources           │ Role/accounts-api              │ Pass   │ Ok     │
-│ 35       │ restrict-rbac-wildcards            │ no-wildcard-resources           │ Role/accounts-api-legacy       │ Pass   │ Ok     │
-│──────────│────────────────────────────────────│─────────────────────────────────│────────────────────────────────│────────│────────│
+│──────────│────────────────────────────────────│────────────────────────────────────│─────────────────────────────────│────────│────────│
+│ [40;32mID (39) [0m │ [40;32mPOLICY                            [0m │ [40;32mRULE                              [0m │ [40;32mRESOURCE                       [0m │ [40;32mRESULT[0m │ [40;32mREASON[0m │
+│──────────│────────────────────────────────────│────────────────────────────────────│─────────────────────────────────│────────│────────│
+│ 1        │ disallow-host-namespaces           │ autogen-host-namespaces            │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 2        │ disallow-host-namespaces           │ autogen-host-namespaces            │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 3        │ disallow-hostpath                  │ autogen-no-hostpath-volumes        │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 4        │ disallow-hostpath                  │ autogen-no-hostpath-volumes        │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 5        │ require-restricted-securitycontext │ autogen-run-as-non-root            │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 6        │ require-restricted-securitycontext │ autogen-no-privilege-escalation    │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 7        │ require-restricted-securitycontext │ autogen-drop-all-capabilities      │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 8        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default    │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 9        │ require-restricted-securitycontext │ autogen-seccomp-runtime-default    │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 10       │ require-restricted-securitycontext │ autogen-run-as-non-root            │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 11       │ require-restricted-securitycontext │ autogen-no-uid-zero                │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 12       │ require-restricted-securitycontext │ autogen-no-uid-zero                │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 13       │ require-image-digest               │ autogen-image-must-be-digest       │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 14       │ require-image-digest               │ autogen-image-must-be-digest       │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 15       │ restrict-registries                │ autogen-allowed-registries         │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 16       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom          │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 17       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom          │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 18       │ require-resource-limits            │ autogen-limits-required            │ Deployment/accounts-api-legacy  │ Pass   │ Ok     │
+│ 19       │ restrict-rbac-wildcards            │ no-wildcard-verbs                  │ Role/accounts-api-legacy        │ Pass   │ Ok     │
+│ 20       │ restrict-rbac-wildcards            │ secrets-need-named-resources       │ Role/accounts-api-legacy        │ Pass   │ Ok     │
+│ 21       │ disallow-host-namespaces           │ autogen-host-namespaces            │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 22       │ disallow-hostpath                  │ autogen-no-hostpath-volumes        │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 23       │ require-restricted-securitycontext │ autogen-run-as-non-root            │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 24       │ require-restricted-securitycontext │ autogen-no-privilege-escalation    │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 25       │ require-restricted-securitycontext │ autogen-drop-all-capabilities      │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 26       │ require-restricted-securitycontext │ autogen-seccomp-runtime-default    │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 27       │ require-image-digest               │ autogen-image-must-be-digest       │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 28       │ restrict-registries                │ autogen-allowed-registries         │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 29       │ disallow-secrets-as-env            │ autogen-no-secret-envfrom          │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 30       │ require-resource-limits            │ autogen-limits-required            │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 31       │ restrict-rbac-wildcards            │ no-wildcard-verbs                  │ Role/accounts-api               │ Pass   │ Ok     │
+│ 32       │ restrict-rbac-wildcards            │ secrets-need-named-resources       │ Role/accounts-api               │ Pass   │ Ok     │
+│ 33       │ require-restricted-securitycontext │ autogen-no-uid-zero                │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 34       │ restrict-rbac-wildcards            │ no-wildcard-resources              │ Role/accounts-api               │ Pass   │ Ok     │
+│ 35       │ restrict-rbac-wildcards            │ no-wildcard-resources              │ Role/accounts-api-legacy        │ Pass   │ Ok     │
+│ 36       │ require-restricted-securitycontext │ autogen-init-containers-restricted │ Deployment/accounts-api-bypass  │ Pass   │ Ok     │
+│ 37       │ require-restricted-securitycontext │ autogen-init-containers-restricted │ Deployment/accounts-api         │ Pass   │ Ok     │
+│ 38       │ restrict-privileged-rolebindings   │ no-binding-to-super-roles          │ RoleBinding/accounts-api-bypass │ Pass   │ Ok     │
+│ 39       │ restrict-privileged-rolebindings   │ no-binding-to-super-roles          │ RoleBinding/accounts-api        │ Pass   │ Ok     │
+│──────────│────────────────────────────────────│────────────────────────────────────│─────────────────────────────────│────────│────────│
 
 
-Test Summary: 35 tests passed and 0 tests failed
+Test Summary: 39 tests passed and 0 tests failed
 

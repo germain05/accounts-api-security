@@ -75,16 +75,21 @@ fi
 
 # ------------------------------------------------------- Kubernetes admission
 section "Kyverno admission policies  (section 4a + 5)"
-run "kyverno test — 3 fixtures, 35 assertions" kyverno-test.txt \
+run "kyverno test — 3 fixtures, 39 assertions" kyverno-test.txt \
     kyverno test policy/kyverno/tests
 
 # ---------------------------------------------------------------- Terraform
 section "Terraform policy-as-code  (section 4b)"
-run "conftest verify — 23 rego unit tests" conftest-verify.txt \
+run "conftest verify — 33 rego unit tests" conftest-verify.txt \
     conftest verify --policy policy/rego
 
 run_expect_fail "bad fixture must be rejected (11 deny rules)" conftest-bad-fixture.txt \
     conftest test --policy policy/rego --parser hcl2 --all-namespaces policy/fixtures/terraform/bad/
+
+# The fixture that separates a rule set from a speed bump: every resource in it
+# satisfies the letter of a naive rule while shipping the same exposure.
+run_expect_fail "evasion fixture must be rejected (var-driven, dynamic, IPv6, Aurora)" conftest-evasion-fixture.txt \
+    conftest test --policy policy/rego --parser hcl2 --all-namespaces policy/fixtures/terraform/evasion/
 
 run "good fixture must pass" conftest-good-fixture.txt \
     conftest test --policy policy/rego --parser hcl2 --all-namespaces policy/fixtures/terraform/good/

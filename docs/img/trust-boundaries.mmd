@@ -1,0 +1,38 @@
+flowchart LR
+  subgraph INET["Internet — untrusted"]
+    U["Customers / mobile app"]
+    KYC["KYC provider (3rd party)"]
+    ATK["Attacker"]
+  end
+
+  subgraph GH["GitHub — untrusted-by-default control plane"]
+    SRC["Source + Actions runners"]
+  end
+
+  subgraph AWSB["AWS build account 210987654321"]
+    ECR["ECR accounts-api"]
+  end
+
+  subgraph AWSP["AWS prod account 123456789012 — ap-south-1"]
+    CF["CloudFront + WAF"] --> ALB["ALB"]
+    subgraph EKS["Shared EKS cluster — ~12 other teams' services"]
+      NS["ns/accounts (accounts-api x3)"]
+      OTHER["ns/* other teams"]
+    end
+    RDS[("RDS PostgreSQL\nname,email,phone,IBAN,bal,last4")]
+    MSK["Event stream"]
+    SM["Secrets Manager + KMS"]
+    CT["CloudTrail / GuardDuty"]
+  end
+
+  U -->|B1 TLS| CF
+  ALB -->|B2| NS
+  NS -->|B3 VPC, no public path| RDS
+  MSK --> NS
+  NS -->|B4 egress| KYC
+  ATK -.->|B4 exfil| INET
+  SRC -->|B5 OIDC AssumeRole| ECR
+  SRC -->|B5 OIDC AssumeRole| EKS
+  ECR -->|B6 image pull| NS
+  NS -->|B7 IRSA| SM
+  NS <-.->|B8 shared node / cluster RBAC| OTHER
