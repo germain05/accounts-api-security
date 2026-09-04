@@ -1,0 +1,61 @@
+# Local Semgrep rules. The reason Semgrep was chosen over a closed ruleset is
+# exactly this file: these are rules for *our* bugs, and none of them exist in
+# p/owasp-top-ten. Threats T5 (log leakage) and T2 (injection giving step 1).
+rules:
+  # ------------------------------------------------------------------ T5
+  - id: accounts-api-log-raw-struct
+    languages: [go]
+    severity: ERROR
+    message: >-
+      Logging a domain struct directly bypasses the allowlist marshaller in
+      internal/logging. Log named, redacted fields instead. See
+      docs/06-log-redaction.md — this is the leak that needs no exploit. [T5]
+    patterns:
+      - pattern-either:
+          - pattern: $LOG.Info($MSG, ..., $X, ...)
+          - pattern: $LOG.Error($MSG, ..., $X, ...)
+          - pattern: $LOG.Debug($MSG, ..., $X, ...)
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+            - pattern-either:
+                - pattern: $ACCT
+                - pattern: $REQ
+          # narrowed by type in CI via --config with a typed ruleset; kept simple
+          # here so the rule is readable in review
+      - pattern-not: $LOG.Info($MSG, "account_id", $ID)
+
+  - id: accounts-api-pii-in-url
+    languages: [go]
+    severity: ERROR
+    message: >-
+      PII in a URL path or query parameter lands in the ALB and CloudFront access
+      logs BEFORE any redaction layer sees it. Use the account UUID. [T5]
+    patterns:
+      - pattern-either:
+          - pattern: mux.HandleFunc("=~/.*\\{(iban|email|phone|pan|card).*\\}.*/", ...)
+          - pattern: r.Get("=~/.*\\{(iban|email|phone|pan|card).*\\}.*/", ...)
+
+  # ------------------------------------------------------------------ T2
+  - id: accounts-api-sql-string-concat
+    languages: [go]
+    severity: ERROR
+    message: >-
+      SQL built by concatenation. Use parameterised queries — an injection here is
+      the RCE-equivalent first step for threat T2, and it reaches the whole
+      customer table without needing a shell. [T2]
+    patterns:
+      - pattern-either:
+          - pattern: $DB.Query(fmt.Sprintf(...), ...)
+          - pattern: $DB.Exec(fmt.Sprintf(...), ...)
+          - pattern: $DB.QueryRow("..." + $X, ...)
+
+  - id: accounts-api-tls-verification-disabled
+    languages: [go]
+    severity: ERROR
+    message: >-
+      InsecureSkipVerify defeats the KYC certificate pinning in
+      k8s/istio-egress.yaml. If this is needed for a local test, it belongs behind
+      a build tag, not in the request path. [T5]
+    pattern: |
+      &tls.Config{..., InsecureSkipVerify: true, ...}

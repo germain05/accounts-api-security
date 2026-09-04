@@ -1,0 +1,45 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow host namespaces
+    policies.kyverno.io/severity: critical
+    example-bank.io/threat: "T2 — finding A2"
+    # ---- rollout ----
+    example-bank.io/day-one-mode: "Enforce"
+    example-bank.io/promotion-evidence: >-
+      Shipped Enforce on day one. A cluster-wide dry-run over 14 days of live
+      admission traffic produced 2 violations, both in kube-system (excluded
+      below) and none in a tenant namespace. Nothing to promote.
+spec:
+  # Enforce from day one: this is the single control that makes every
+  # NetworkPolicy in the cluster meaningful. A pod on the host network is not on
+  # the pod network, so no NetworkPolicy applies to it — including the egress
+  # control in k8s/networkpolicy-egress.yaml.
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: host-namespaces
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          # Cluster infrastructure that legitimately needs the host network.
+          # Named namespaces, never a label selector — a label is something a
+          # tenant can set on their own namespace.
+          - resources:
+              namespaces: [kube-system, kyverno, falco-system, amazon-cloudwatch, aws-observability]
+      validate:
+        message: >-
+          hostNetwork/hostPID/hostIPC are not permitted. hostNetwork in particular
+          removes the pod from the pod network, which silently disables every
+          NetworkPolicy that would otherwise apply to it, and exposes the node's
+          link-local IMDS endpoint. [T2/A2]
+        pattern:
+          spec:
+            =(hostNetwork): "false"
+            =(hostPID): "false"
+            =(hostIPC): "false"

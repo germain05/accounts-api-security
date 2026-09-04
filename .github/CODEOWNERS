@@ -1,0 +1,32 @@
+# Review ownership. This file is what turns "signed by an approver" into a
+# process: the signature proves who approved, CODEOWNERS proves they were asked.
+#
+# GitHub branch protection on `main` requires CODEOWNERS review, so none of the
+# paths below can change without the named team on the pull request.
+
+*                                   @example-bank/accounts-api-team
+
+# --- security-owned: the controls themselves -------------------------------
+/policy/                            @example-bank/security-engineering
+/iam/                               @example-bank/security-engineering
+/runtime/                           @example-bank/security-engineering
+/.github/workflows/                 @example-bank/security-engineering
+/THREAT-MODEL.md                    @example-bank/security-engineering
+/DECISIONS.md                       @example-bank/security-engineering
+
+# --- the exception path: two teams, deliberately ---------------------------
+# A waiver needs the service team (who requested it) and security (who approved
+# it) on the same PR. The checker also enforces requested_by != approved_by, so
+# the two-person rule holds even if branch protection is misconfigured.
+/waivers/waivers.yaml               @example-bank/security-engineering @example-bank/accounts-api-team
+
+# --- security leads only ---------------------------------------------------
+# Who may approve waivers is a higher bar than what may be waived. Without this
+# line the approver list is self-serve and the whole mechanism is decorative.
+/waivers/APPROVERS.yaml             @example-bank/security-leads
+/waivers/keys/                      @example-bank/security-leads
+/.github/CODEOWNERS                 @example-bank/security-leads
+
+# --- infrastructure --------------------------------------------------------
+/terraform/                         @example-bank/security-engineering @example-bank/platform
+/k8s/                               @example-bank/platform @example-bank/accounts-api-team

@@ -1,0 +1,40 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: CPU and memory limits are mandatory
+    policies.kyverno.io/severity: low
+    example-bank.io/threat: "T2 — finding A8 (availability, not confidentiality)"
+    example-bank.io/day-one-mode: "Audit"
+    example-bank.io/promotion-criteria: >-
+      This is a tenancy control on a shared cluster, not a security control, and I
+      am explicitly not spending enforcement credibility on it early. Promote when
+      the platform team is ready to own the resulting capacity conversations —
+      that is a scheduling problem, not a policy problem. LimitRange defaults per
+      namespace are the better fix and make this policy nearly redundant.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: limits-required
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system]
+      validate:
+        message: >-
+          Containers must set cpu and memory limits. On a cluster shared with a
+          dozen other teams an unbounded container is an outage for services this
+          team does not own. [A8]
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"

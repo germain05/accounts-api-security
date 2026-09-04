@@ -1,0 +1,90 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+  annotations:
+    policies.kyverno.io/title: Only images our pipeline signed may run
+    policies.kyverno.io/severity: critical
+    example-bank.io/threat: "T4"
+    example-bank.io/day-one-mode: "Enforce in ns/accounts, Audit elsewhere"
+    example-bank.io/promotion-criteria: >-
+      Cluster-wide Enforce requires every team to be signing, which requires every
+      team's pipeline to have an id-token permission and a cosign step. Evidence
+      to promote: 30 days of Audit PolicyReport showing 100% of admitted images in
+      a namespace carry a verifiable signature, per namespace, promoted namespace
+      by namespace rather than all at once. Rolling this out cluster-wide in one
+      change would break twelve teams simultaneously and get the admission
+      controller removed, which is a worse outcome than an unsigned image.
+    example-bank.io/limitations: >-
+      This rule is NOT unit-testable offline — `kyverno test` cannot verify a
+      signature without registry and Rekor access, so it is deliberately excluded
+      from policy/kyverno/tests/kyverno-test.yaml rather than given a fake
+      passing assertion. It is validated in the kind-based integration check in
+      scripts/run-policy-tests.sh --integration, which needs network.
+      See docs/02-build-integrity.md for what a passing verification does and does
+      not prove.
+spec:
+  validationFailureAction: Audit
+  background: false        # signature verification is an admission-time check
+  webhookTimeoutSeconds: 30
+  validationFailureActionOverrides:
+    - action: Enforce
+      namespaces: [accounts]
+  rules:
+    - name: verify-cosign-keyless
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [accounts]
+      imageReferences:
+        - "*.dkr.ecr.ap-south-1.amazonaws.com/accounts-api*"
+      verifyImages:
+        - imageReferences:
+            - "*.dkr.ecr.ap-south-1.amazonaws.com/accounts-api*"
+          # required: the image must have a signature we can verify, and the
+          # digest is rewritten into the pod spec so the running artefact is
+          # exactly the one that was verified (no TOCTOU between check and pull).
+          mutateDigest: true
+          verifyDigest: true
+          required: true
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    # The trust root, stated explicitly. Only this workflow file,
+                    # on this branch, in this repo, under GitHub's OIDC issuer.
+                    subject: "https://github.com/example-bank/accounts-api/.github/workflows/build-release.yml@refs/heads/main"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+
+    - name: verify-sbom-attestation-exists
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [accounts]
+      imageReferences:
+        - "*.dkr.ecr.ap-south-1.amazonaws.com/accounts-api*"
+      verifyImages:
+        - imageReferences:
+            - "*.dkr.ecr.ap-south-1.amazonaws.com/accounts-api*"
+          attestations:
+            - type: https://spdx.dev/Document
+              attestors:
+                - entries:
+                    - keyless:
+                        subject: "https://github.com/example-bank/accounts-api/.github/workflows/build-release.yml@refs/heads/main"
+                        issuer: "https://token.actions.githubusercontent.com"
+              # Deliberately asserts only that an SBOM exists and is signed by our
+              # pipeline. It does NOT assert anything about the SBOM's contents:
+              # a "no CRITICAL CVEs" condition here would be a time-of-check
+              # decision about a fact that changes daily, and would block a
+              # rollback of a healthy image the morning a new CVE lands. Freshness
+              # belongs in the nightly re-scan, not at admission.
+              conditions:
+                - all:
+                    - key: "{{ spdxVersion }}"
+                      operator: Equals
+                      value: "SPDX-2.3"

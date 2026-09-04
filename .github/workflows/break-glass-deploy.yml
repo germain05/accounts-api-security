@@ -1,0 +1,122 @@
+# Break-glass emergency deploy. Procedure and audit-trail rationale:
+# docs/03-break-glass.md
+#
+# What this DOES bypass: the blocking security gates (they still run, they still
+# report, they cannot stop the deploy).
+# What it does NOT bypass: image signing, digest pinning, Kyverno admission, or
+# the audit trail. Provenance is not negotiable under duress.
+name: break-glass-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      incident_id:
+        description: "PagerDuty incident id, e.g. INC-4471. Verified against the API."
+        required: true
+      justification:
+        description: "What is broken, what this deploy does, why it cannot wait. Min 80 chars."
+        required: true
+      image_digest:
+        description: "sha256:... — digest only. A tag will be rejected."
+        required: true
+
+permissions: {}
+
+jobs:
+  authorise:
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - name: Validate inputs
+        env:
+          INCIDENT: ${{ inputs.incident_id }}
+          JUSTIFICATION: ${{ inputs.justification }}
+          DIGEST: ${{ inputs.image_digest }}
+        run: |
+          set -euo pipefail
+          [[ "$INCIDENT" =~ ^INC-[0-9]{4,}$ ]] || { echo "::error::incident_id must be INC-nnnn"; exit 1; }
+          [[ "${#JUSTIFICATION}" -ge 80 ]]      || { echo "::error::justification too short (${#JUSTIFICATION} chars, need 80)"; exit 1; }
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::image_digest must be sha256:<64 hex>. Tags are not accepted, including here."; exit 1; }
+      - name: Confirm the incident actually exists and is open
+        env:
+          PD_TOKEN: ${{ secrets.PAGERDUTY_READONLY_TOKEN }}
+        run: |
+          set -euo pipefail
+          status=$(curl -fsS -H "Authorization: Token token=$PD_TOKEN" \
+            "https://api.pagerduty.com/incidents?incident_key=${{ inputs.incident_id }}" \
+            | jq -r '.incidents[0].status // "none"')
+          echo "incident status: $status"
+          [ "$status" = "triggered" ] || [ "$status" = "acknowledged" ] || {
+            echo "::error::${{ inputs.incident_id }} is '$status'. Break-glass requires an open incident."; exit 1; }
+
+  # Gates run and report. They cannot block. The SARIF is the input to the
+  # post-incident review, which is the whole reason to run them at all.
+  gates-advisory:
+    needs: authorise
+    uses: ./.github/workflows/security-gates.yml
+    permissions: { contents: read, id-token: write }
+
+  deploy:
+    needs: [authorise, gates-advisory]
+    if: always() && needs.authorise.result == 'success'
+    runs-on: ubuntu-24.04
+    environment: break-glass        # two required reviewers from the SRE on-call lead group
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+
+      # Separate role, separate trust policy (sub: :environment:break-glass), 60-min
+      # max session. Distinguishable from a normal deploy in CloudTrail by ARN alone.
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/gha-accounts-api-breakglass
+          aws-region: ap-south-1
+          # every API call under this session carries the incident id in the ARN
+          role-session-name: breakglass-${{ inputs.incident_id }}-${{ github.run_id }}
+          role-duration-seconds: 3600
+
+      - name: Emit the audit record BEFORE touching production
+        run: |
+          set -euo pipefail
+          aws events put-events --entries "$(jq -nc \
+            --arg inc  '${{ inputs.incident_id }}' \
+            --arg who  '${{ github.actor }}' \
+            --arg dig  '${{ inputs.image_digest }}' \
+            --arg run  '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+            --arg just '${{ inputs.justification }}' \
+            '[{Source:"accounts-api.breakglass",DetailType:"BreakGlassDeploy",
+               Detail:({incident:$inc,actor:$who,digest:$dig,run_url:$run,justification:$just}|tostring)}]')"
+
+      - name: Deploy by digest (admission policies still apply)
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name banking-shared-ap-south-1 --region ap-south-1
+          kubectl -n accounts set image deploy/accounts-api \
+            api="210987654321.dkr.ecr.ap-south-1.amazonaws.com/accounts-api@${{ inputs.image_digest }}"
+          # If the image is unsigned, Kyverno rejects it here and this fails.
+          # That is intended: break-glass skips scanners, not provenance.
+          kubectl -n accounts rollout status deploy/accounts-api --timeout=180s
+
+      - name: Open the 72-hour follow-up issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "break-glass ${{ inputs.incident_id }} — remediate within 72h" \
+            --label break-glass,security \
+            --assignee "@example-bank/security-oncall" \
+            --body "Actor: @${{ github.actor }}
+          Digest: ${{ inputs.image_digest }}
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Justification:
+          ${{ inputs.justification }}
+
+          This issue blocks the next normal release of accounts-api once it is 72h old
+          (enforced in security-gates.yml). Close it with either the fix or a signed
+          waiver under waivers/README.md."

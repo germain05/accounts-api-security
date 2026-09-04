@@ -1,0 +1,16 @@
+{
+  "_comment": "The policy attached to the accounts-api pod identity role TODAY (section 4c), kept verbatim for comparison. NotAction+Allow on Resource:* is an allow-list of 'everything in AWS except two IAM delete calls'. See docs/04-findings.md and iam/pod-identity-policy.json for the replacement.",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "NotAction": ["iam:DeleteRole", "iam:DeleteUser"],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue", "kms:Decrypt"],
+      "Resource": "*"
+    }
+  ]
+}

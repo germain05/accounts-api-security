@@ -1,0 +1,37 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-registries
+  annotations:
+    policies.kyverno.io/title: Images come from our registries only
+    policies.kyverno.io/severity: high
+    example-bank.io/threat: "T4"
+    example-bank.io/day-one-mode: "Enforce"
+    example-bank.io/promotion-evidence: >-
+      Shipped Enforce. The allowlist was derived from a 30-day inventory of every
+      image reference actually running in the cluster, so it was empirically
+      complete before it was enforced. That inventory is the evidence, and it is
+      the pattern I would use for every promotion: enumerate reality first, then
+      enforce the enumeration.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: allowed-registries
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          Images must come from our ECR registries or the mirrored upstream proxy.
+          A pull straight from Docker Hub is an unauthenticated dependency on a
+          third party's availability and integrity, in the deploy path. [T4]
+        pattern:
+          spec:
+            containers:
+              - image: "123456789012.dkr.ecr.ap-south-1.amazonaws.com/* | 210987654321.dkr.ecr.ap-south-1.amazonaws.com/* | 210987654321.dkr.ecr.ap-south-1.amazonaws.com/mirror/*"

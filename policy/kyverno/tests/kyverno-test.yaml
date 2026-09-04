@@ -1,0 +1,242 @@
+# `kyverno test policy/kyverno/tests`
+#
+# Three fixtures, on purpose:
+#   bad-workload.yaml     the manifest running in production today  -> must FAIL
+#   bypass-workload.yaml  a plausible attempt to satisfy the policy names
+#                         without changing the behaviour             -> must FAIL
+#   good-workload.yaml    a byte-identical copy of remediate/workload-fixed.yaml,
+#                         i.e. the manifest we actually ship         -> must PASS
+#
+# The middle fixture is the one that earns its keep. A suite with only a broken
+# and a fixed manifest proves the rules distinguish those two files; it does not
+# prove they resist someone reading the rule names and working around them.
+#
+# NOT covered here: verify-image-signature. `kyverno test` cannot verify a
+# Sigstore signature without registry and Rekor access, and a fake passing
+# assertion for it would be worse than an honest gap. It is exercised by
+# `scripts/run-policy-tests.sh --integration` against a kind cluster.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: accounts-api-admission-baseline
+policies:
+  - ../policies/disallow-host-namespaces.yaml
+  - ../policies/disallow-hostpath.yaml
+  - ../policies/require-restricted-securitycontext.yaml
+  - ../policies/restrict-rbac-wildcards.yaml
+  - ../policies/require-image-digest.yaml
+  - ../policies/restrict-registries.yaml
+  - ../policies/disallow-secrets-as-env.yaml
+  - ../policies/require-resource-limits.yaml
+resources:
+  - resources/bad-workload.yaml
+  - resources/bypass-workload.yaml
+  - resources/good-workload.yaml
+
+results:
+  # ---------------------------------------------------------------- A2
+  - policy: disallow-host-namespaces
+    rule: autogen-host-namespaces
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  - policy: disallow-host-namespaces
+    rule: autogen-host-namespaces
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: pass
+
+  # ---------------------------------------------------------------- A3 / A7
+  - policy: disallow-hostpath
+    rule: autogen-no-hostpath-volumes
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  # the "renamed and pointed somewhere harmless" hostPath
+  - policy: disallow-hostpath
+    rule: autogen-no-hostpath-volumes
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: fail
+
+  # ---------------------------------------------------------------- A4
+  - policy: require-restricted-securitycontext
+    rule: autogen-run-as-non-root
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  - policy: require-restricted-securitycontext
+    rule: autogen-no-privilege-escalation
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  - policy: require-restricted-securitycontext
+    rule: autogen-drop-all-capabilities
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  - policy: require-restricted-securitycontext
+    rule: autogen-seccomp-runtime-default
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  # bypass fixture: seccompProfile is set, but to Unconfined
+  - policy: require-restricted-securitycontext
+    rule: autogen-seccomp-runtime-default
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: fail
+
+  # bypass fixture claims runAsNonRoot: true and then sets runAsUser: 0
+  - policy: require-restricted-securitycontext
+    rule: autogen-run-as-non-root
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: pass
+  - policy: require-restricted-securitycontext
+    rule: autogen-no-uid-zero
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  - policy: require-restricted-securitycontext
+    rule: autogen-no-uid-zero
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: fail
+
+  # ---------------------------------------------------------------- A6
+  - policy: require-image-digest
+    rule: autogen-image-must-be-digest
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  # bypass fixture IS digest-pinned — this rule correctly passes it, and
+  # restrict-registries is what catches it. Asserted so that a future change
+  # which starts failing it here gets noticed.
+  - policy: require-image-digest
+    rule: autogen-image-must-be-digest
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: pass
+
+  # ---------------------------------------------------------------- T4
+  - policy: restrict-registries
+    rule: autogen-allowed-registries
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: fail
+
+  # ---------------------------------------------------------------- A5
+  - policy: disallow-secrets-as-env
+    rule: autogen-no-secret-envfrom
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+  # env.valueFrom.secretKeyRef instead of envFrom — same outcome, also caught
+  - policy: disallow-secrets-as-env
+    rule: autogen-no-secret-envfrom
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: fail
+
+  # ---------------------------------------------------------------- A8
+  - policy: require-resource-limits
+    rule: autogen-limits-required
+    resources: [accounts-api-legacy]
+    kind: Deployment
+    result: fail
+
+  # ---------------------------------------------------------------- A1 (RBAC)
+  - policy: restrict-rbac-wildcards
+    rule: no-wildcard-verbs
+    resources: [accounts-api-legacy]
+    kind: Role
+    result: fail
+  - policy: restrict-rbac-wildcards
+    rule: secrets-need-named-resources
+    resources: [accounts-api-legacy]
+    kind: Role
+    result: fail
+
+  # ================================================================
+  # The remediated manifest must pass every policy. If any of these flips to
+  # `fail`, either the policy became wrong or the shipped manifest regressed —
+  # and the suite forces someone to decide which.
+  # ================================================================
+  - policy: disallow-host-namespaces
+    rule: autogen-host-namespaces
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: disallow-hostpath
+    rule: autogen-no-hostpath-volumes
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: require-restricted-securitycontext
+    rule: autogen-run-as-non-root
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: require-restricted-securitycontext
+    rule: autogen-no-privilege-escalation
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: require-restricted-securitycontext
+    rule: autogen-drop-all-capabilities
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: require-restricted-securitycontext
+    rule: autogen-seccomp-runtime-default
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: require-image-digest
+    rule: autogen-image-must-be-digest
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: restrict-registries
+    rule: autogen-allowed-registries
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: disallow-secrets-as-env
+    rule: autogen-no-secret-envfrom
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: require-resource-limits
+    rule: autogen-limits-required
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: restrict-rbac-wildcards
+    rule: no-wildcard-verbs
+    resources: [accounts-api]
+    kind: Role
+    result: pass
+  - policy: restrict-rbac-wildcards
+    rule: secrets-need-named-resources
+    resources: [accounts-api]
+    kind: Role
+    result: pass
+  - policy: require-restricted-securitycontext
+    rule: autogen-no-uid-zero
+    resources: [accounts-api]
+    kind: Deployment
+    result: pass
+  - policy: restrict-rbac-wildcards
+    rule: no-wildcard-resources
+    resources: [accounts-api]
+    kind: Role
+    result: pass
+  # the legacy Role names its resources explicitly, so THIS rule passes it —
+  # asserted so the suite documents which rule actually catches it (no-wildcard-verbs)
+  - policy: restrict-rbac-wildcards
+    rule: no-wildcard-resources
+    resources: [accounts-api-legacy]
+    kind: Role
+    result: pass

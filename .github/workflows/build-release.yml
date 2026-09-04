@@ -1,0 +1,185 @@
+# Section 2 — build and release integrity.  Threats: T1 (CI/CD identity abuse), T4 (unsigned/mutable artefact).
+#
+# Design rules enforced here:
+#   1. No static AWS credentials anywhere. OIDC only.  (T1)
+#   2. Every third-party action pinned to a full commit SHA. A tag is mutable; a
+#      compromised maintainer re-points v4 and owns our deploy role.  (T1)
+#   3. Least-privilege `permissions` at workflow level, widened only per job.  (T1)
+#   4. The image is pushed and then referenced ONLY by digest. The human-readable
+#      tag exists for operators; nothing in the deploy path resolves it.  (T4)
+#   5. Signing and SBOM attestation happen against the digest, and the pipeline
+#      verifies its own output before deploy runs.  (T4)
+name: build-release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# NOTE: deliberately NOT `pull_request_target`. That trigger runs with the base
+# repo's secrets and OIDC identity against fork-controlled code — it is the single
+# most common route to T1 and there is no safe way to use it in this repo.
+
+permissions: {}          # default deny; each job opts in to exactly what it needs
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_ACCOUNT: "210987654321"                       # build account
+  ECR_REPO: accounts-api
+  # Trust root for keyless verification. Pinned so a reviewer can see exactly which
+  # identity is allowed to have produced a deployable image.
+  COSIGN_ISSUER: https://token.actions.githubusercontent.com
+  COSIGN_IDENTITY: https://github.com/example-bank/accounts-api/.github/workflows/build-release.yml@refs/heads/main
+
+jobs:
+  # ---------------------------------------------------------------------------
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write            # required for OIDC to AWS *and* for Fulcio
+      packages: write            # ghcr mirror used for the local/free-tier demo
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      image: ${{ steps.meta.outputs.image }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false     # don't leave a push-capable token on disk
+
+      # Immutable, versioned tag: <semver>-<short-sha>. Recomputed from git, never
+      # supplied by a PR author. `latest` is never produced by this pipeline.
+      - id: meta
+        run: |
+          set -euo pipefail
+          VERSION="$(cat VERSION)-${GITHUB_SHA::12}"
+          echo "version=$VERSION"                                   >> "$GITHUB_OUTPUT"
+          echo "image=${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}" >> "$GITHUB_OUTPUT"
+
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::210987654321:role/gha-accounts-api-ecr-push
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-${{ github.run_id }}-${{ github.run_attempt }}
+          role-duration-seconds: 900          # 15 min; the job takes ~6
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+
+      # Belt and braces on top of ECR's IMMUTABLE setting (terraform/ecr.tf): fail
+      # loudly rather than silently no-op if this tag already exists.  (T4)
+      - name: Refuse to reuse an existing tag
+        run: |
+          set -euo pipefail
+          if aws ecr describe-images --repository-name "$ECR_REPO" \
+               --image-ids imageTag="${{ steps.meta.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::tag ${{ steps.meta.outputs.version }} already exists — refusing to mutate"
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
+
+      - id: push
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355 # v6.10.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+          provenance: mode=max        # SLSA v1 build provenance, attached to the index
+          sbom: false                 # we produce our own with syft, below
+          cache-from: type=gha
+          cache-to: type=gha,mode=min # `min` — build caches are a cross-PR data path
+
+  # ---------------------------------------------------------------------------
+  # SBOM + signature. Separate job so the signing identity in the Fulcio
+  # certificate is this job, and so a reviewer can read the trust chain in one place.
+  attest:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write             # Fulcio: exchanges the GH OIDC token for a short-lived cert
+    env:
+      REF: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+    steps:
+      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::210987654321:role/gha-accounts-api-ecr-push
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: attest-${{ github.run_id }}
+      - uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+
+      # SBOM is generated from the *pushed image by digest*, not from the workspace,
+      # so it describes the artefact that will actually run.
+      - uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+        with:
+          image: ${{ env.REF }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false      # deliberate: see below
+
+      # The SBOM is published as an in-toto attestation attached to the image digest
+      # in the registry — NOT as a build-log artefact.  (T4)
+      # Rationale: Actions artefacts expire (90 days default), are not addressable by
+      # digest, and are not retrievable by an incident responder holding only a
+      # running container's image reference. `cosign download attestation` is.
+      - name: Sign image and attach SBOM attestation (keyless)
+        run: |
+          set -euo pipefail
+          cosign sign --yes "$REF"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+
+      # Verification is part of the pipeline, not a claim in a README.  (T4)
+      - name: Verify signature and attestation
+        run: |
+          set -euo pipefail
+          cosign verify \
+            --certificate-identity "$COSIGN_IDENTITY" \
+            --certificate-oidc-issuer "$COSIGN_ISSUER" \
+            "$REF" | tee verify-signature.json
+          cosign verify-attestation --type spdxjson \
+            --certificate-identity "$COSIGN_IDENTITY" \
+            --certificate-oidc-issuer "$COSIGN_ISSUER" \
+            "$REF" > /dev/null
+          echo "OK: $REF is signed by $COSIGN_IDENTITY and carries an SPDX attestation"
+
+  # ---------------------------------------------------------------------------
+  # Deploy runs in a protected GitHub Environment. That is what puts
+  # `:environment:production` into the OIDC `sub` claim, which is what the prod
+  # trust policy requires — so a push to main cannot reach prod without passing the
+  # environment's reviewers.  (T1)
+  deploy:
+    needs: [build, attest]
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+
+      - uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4.0.2
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/gha-accounts-api-deploy
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: deploy-${{ github.run_id }}
+          role-duration-seconds: 900
+
+      # Digest, never tag. Kyverno rejects tag-only references at admission anyway
+      # (policy/kyverno/policies/require-image-digest.yaml) — this is the same rule
+      # applied one step earlier so the failure is a red pipeline, not a red cluster.
+      - name: Roll out by digest
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name banking-shared-ap-south-1 --region "$AWS_REGION"
+          kubectl -n accounts set image deploy/accounts-api \
+            api="${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}"
+          kubectl -n accounts rollout status deploy/accounts-api --timeout=180s

@@ -1,0 +1,30 @@
+# GENERATED SUPPRESSION FILES — never commit these.
+#
+# They are produced by `scripts/waiver_check.py generate` at pipeline time from
+# the unexpired entries in waivers/waivers.yaml. Keeping them out of git is what
+# makes the waiver file the only suppression path in this repo: there is no file
+# an engineer can hand-edit to make a finding go away, and an expired waiver stops
+# suppressing the moment it lapses rather than lingering in a committed ignore list.
+.trivyignore
+.gitleaks.toml
+.semgrepignore
+policy/rego/data.waivers.json
+
+# scratch from the waiver signature check
+.waiver-*.canonical.json
+
+# private signing keys must never be here. The approver public keys in
+# waivers/keys/*.pub are committed on purpose; the .key halves are not in this
+# repository at all — see waivers/README.md.
+*.key
+cosign.key
+
+# local tooling
+bin/
+*.tar.gz
+*.zip
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+__pycache__/

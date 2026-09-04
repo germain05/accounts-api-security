@@ -1,0 +1,23 @@
+# Used by step 3 of runtime/runbook-accounts-api.md. Labelling a pod
+# `quarantine=true` cuts it off at the network layer without deleting it, so the
+# process tree, open file descriptors and memory survive for forensics.
+#
+# Committed rather than improvised at 03:00, because the version somebody types
+# during an incident is the version that has a typo in the podSelector.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quarantine
+  namespace: accounts
+spec:
+  podSelector:
+    matchLabels:
+      quarantine: "true"
+  policyTypes: [Ingress, Egress]
+  # no ingress and no egress rules: total isolation.
+  #
+  # Caveat the responder must know: this does NOT revoke the pod's AWS
+  # credentials. IRSA tokens are already minted and the STS session outlives the
+  # network cut. Rotating the secret (step 1) and, if needed, attaching a Deny-all
+  # inline policy to the pod role is what stops the AWS side. Network isolation
+  # stops the C2 channel, not the identity.
