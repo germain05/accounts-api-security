@@ -1,0 +1,10 @@
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_dynamic_ingress_block: aws_security_group.dyn builds ingress with a `dynamic` block, which cannot be statically analysed. Use explicit aws_security_group_rule resources, or run this module through a plan-JSON gate as well. [T3/B1 evasion]
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_open_ingress: aws_security_group_rule.v6 allows ingress on 5432-5432 from ::/0. Use source_security_group_id; a CIDR is a claim about the network, an SG id is a claim about identity. [T3/B1]
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_rds_cluster_inline_password: aws_rds_cluster.aurora sets master_password, which lands in Terraform state in plaintext. Use manage_master_user_password. [T3/B2]
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_rds_cluster_no_backups: aws_rds_cluster.aurora has backup_retention_period=0 (attribute absent counts as 0, minimum 7). [T3/B4]
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_rds_cluster_no_final_snapshot: aws_rds_cluster.aurora has skip_final_snapshot=true. [T3/B4]
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_rds_cluster_unencrypted: aws_rds_cluster.aurora is unencrypted at rest. [T3/B3]
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_unprovable_ingress_cidr: aws_security_group_rule.var_cidr takes cidr_blocks from ${var.allowed_cidrs}, so this policy cannot prove it excludes 0.0.0.0/0. Name the source security group, or inline the CIDRs. [T3/B1 evasion]
+[31mFAIL[0m - policy/fixtures/terraform/evasion/main.tf - main - deny_unprovable_public: aws_db_instance.sneaky sets publicly_accessible to ${var.public}, which cannot be evaluated from the HCL. `= var.x` is not `= false`. Use a literal, or move the decision behind a module with its own tested policy. [T3/B1 evasion]
+
+[31m25 tests, 17 passed, 0 warnings, 8 failures, 0 exceptions[0m

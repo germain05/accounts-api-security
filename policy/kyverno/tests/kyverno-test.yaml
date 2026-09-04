@@ -28,6 +28,7 @@ policies:
   - ../policies/restrict-registries.yaml
   - ../policies/disallow-secrets-as-env.yaml
   - ../policies/require-resource-limits.yaml
+  - ../policies/restrict-privileged-rolebindings.yaml
 resources:
   - resources/bad-workload.yaml
   - resources/bypass-workload.yaml
@@ -239,4 +240,30 @@ results:
     rule: no-wildcard-resources
     resources: [accounts-api-legacy]
     kind: Role
+    result: pass
+
+  # ---- initContainer blind spot -------------------------------------------
+  - policy: require-restricted-securitycontext
+    rule: autogen-init-containers-restricted
+    resources: [accounts-api-bypass]
+    kind: Deployment
+    result: fail
+  # the remediated workload has no initContainers, so the precondition skips it
+  - policy: require-restricted-securitycontext
+    rule: autogen-init-containers-restricted
+    resources: [accounts-api]
+    kind: Deployment
+    result: skip
+
+  # ---- second-order RBAC bypass: bind to the cluster-admin ClusterRole -----
+  - policy: restrict-privileged-rolebindings
+    rule: no-binding-to-super-roles
+    resources: [accounts-api-bypass]
+    kind: RoleBinding
+    result: fail
+  # the shipped RoleBinding points at a namespaced Role, not a super-role
+  - policy: restrict-privileged-rolebindings
+    rule: no-binding-to-super-roles
+    resources: [accounts-api]
+    kind: RoleBinding
     result: pass

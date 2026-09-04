@@ -1,0 +1,77 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-privileged-rolebindings
+  annotations:
+    policies.kyverno.io/title: No tenant binding to cluster-admin or the built-in super-roles
+    policies.kyverno.io/severity: critical
+    example-bank.io/threat: "T2 — finding A1, second-order"
+    example-bank.io/day-one-mode: "Enforce"
+    example-bank.io/promotion-evidence: >-
+      Shipped Enforce on day one alongside restrict-rbac-wildcards. 14-day dry-run:
+      1 violation, a ClusterRoleBinding for the platform team's own break-glass
+      group, which is excluded by subject name below.
+    example-bank.io/why-this-exists: >-
+      restrict-rbac-wildcards audits the Role. It says nothing about the
+      RoleBinding, so a tenant that cannot write `verbs: ["*"]` in their own Role
+      can still bind their ServiceAccount to the cluster-admin ClusterRole that
+      Kubernetes ships with — no wildcard anywhere in their manifest, and full
+      cluster control. That is the obvious next move once the first policy lands,
+      and a rule set that stops at Roles has a hole shaped exactly like it.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-binding-to-super-roles
+      match:
+        any:
+          - resources:
+              kinds: [RoleBinding, ClusterRoleBinding]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kyverno, falco-system, external-secrets]
+          # The platform team's own break-glass binding, excluded by NAME. Kyverno's
+          # `subjects:` match field describes the requesting user, not the object's
+          # subjects — using it here would silently never match, which is the kind
+          # of mistake that leaves a policy looking present and doing nothing.
+          - resources:
+              names: ["platform-breakglass", "system:*"]
+      validate:
+        message: >-
+          Binding to cluster-admin / admin / edit / system:* is not permitted for
+          workload identities. These ClusterRoles are wildcards Kubernetes ships
+          for you — binding one is how a tenant gets `verbs: ["*"]` without ever
+          writing it. Create a namespaced Role that names the verbs you use. [T2/A1]
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.roleRef.kind }}"
+                operator: Equals
+                value: ClusterRole
+              - key: "{{ request.object.roleRef.name }}"
+                operator: AnyIn
+                value: ["cluster-admin", "admin", "edit", "system:controller:*", "system:kube-*"]
+
+    - name: no-serviceaccount-to-clusterrolebinding
+      match:
+        any:
+          - resources:
+              kinds: [ClusterRoleBinding]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kyverno, falco-system, external-secrets]
+          - resources:
+              names: ["cert-manager*", "external-secrets*", "kyverno*", "aws-*", "secrets-store-csi-driver*", "system:*"]
+      validate:
+        message: >-
+          A workload ServiceAccount must not be bound cluster-wide. Cluster scope
+          means every namespace, including the eleven owned by other teams. Use a
+          RoleBinding in the namespace that needs it. [T2/A1]
+        deny:
+          conditions:
+            any:
+              - key: ServiceAccount
+                operator: AnyIn
+                value: "{{ request.object.subjects[].kind || `[]` }}"

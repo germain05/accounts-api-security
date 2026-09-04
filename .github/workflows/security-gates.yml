@@ -1,6 +1,10 @@
 # Section 3 — the scanning tier, made enforceable.
 # Threats: T4 (SCA), T2 (SAST), T1/T3 (secrets), T3 (IaC).
 #
+# THIS WORKFLOW ACTUALLY RUNS on a fresh clone with no secrets and no cloud
+# account: every tool is installed from a pinned release in the job, so nothing
+# here depends on a licensed action or an org entitlement.
+#
 # Enforcement contract, in one place so nobody has to read the YAML to know it:
 #
 #   gate                | day-one mode | blocks on
@@ -32,6 +36,11 @@ concurrency:
   group: gates-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+env:
+  CONFTEST_VERSION: "0.56.0"
+  KYVERNO_VERSION: "1.13.4"
+  GITLEAKS_VERSION: "8.21.2"
+
 jobs:
   # ---------------------------------------------------------------------------
   # Runs FIRST and blocks everything else. If the waiver file is broken or a
@@ -50,10 +59,28 @@ jobs:
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with: { python-version: "3.12" }
       - run: pip install --disable-pip-version-check pyyaml
+
       - name: Validate waivers (schema, approver, lifetime, expiry, signature)
         run: python3 scripts/waiver_check.py check --verify-signatures
+
       - name: Derive per-tool ignore files from ACTIVE waivers only
         run: python3 scripts/waiver_check.py generate
+
+      # The mechanism is only credible if a reviewer can watch it fail. These two
+      # fixtures assert that the gate rejects a lapsed waiver and a waiver whose
+      # `expires` was edited after approval. If either ever passes, the waiver
+      # path has silently become decorative and this job goes red.
+      - name: Prove the gate fails closed (negative fixtures)
+        run: |
+          set -euo pipefail
+          if python3 scripts/waiver_check.py check --file waivers/fixtures/invalid-waivers.yaml; then
+            echo "::error::the invalid-waiver fixture PASSED — the waiver gate is not enforcing"; exit 1
+          fi
+          if python3 scripts/waiver_check.py check --file waivers/fixtures/tampered.yaml --verify-signatures; then
+            echo "::error::the tampered-waiver fixture PASSED — signatures are not being checked"; exit 1
+          fi
+          echo "waiver gate fails closed on both fixtures, as designed"
+
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         with:
           name: derived-ignore-files
@@ -63,6 +90,7 @@ jobs:
             .semgrepignore
             policy/rego/data.waivers.json
           retention-days: 7
+          include-hidden-files: true
 
   # ---------------------------------------------------------------------------
   # Secret scanning over FULL GIT HISTORY, not the diff.
@@ -77,8 +105,12 @@ jobs:
   #   * On a PR we ALSO run the fast diff-scoped scan so feedback is seconds, but
   #     the full walk runs on every push to main and nightly, so a secret cannot
   #     enter history through a squash-merge or a force-push window.
-  #   * Cost control: the full walk on this repo is ~8s; on a 10-year monorepo it
+  #   * Cost control: the full walk on this repo is ~0.1s; on a 10-year monorepo it
   #     is minutes, which is why it is a push/nightly gate rather than a per-PR one.
+  #
+  # The binary is installed from a pinned release rather than using
+  # gitleaks/gitleaks-action, which requires a paid licence for organisations.
+  # A gate that only works on a personal account is not a gate.
   secrets:
     runs-on: ubuntu-24.04
     needs: waiver-integrity
@@ -89,9 +121,19 @@ jobs:
           fetch-depth: 0                     # REQUIRED. Without this the next step lies.
           persist-credentials: false
       - name: Fetch every remote ref (branches deleted on GitHub still hold blobs)
-        run: git fetch --no-tags --prune --unshallow origin '+refs/heads/*:refs/remotes/origin/*' || true
+        run: git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*' || true
+
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with: { name: derived-ignore-files }
+
+      - name: install gitleaks
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gl.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gl.tgz -C /usr/local/bin gitleaks
+          gitleaks version
+
       - name: gitleaks — full history
         run: |
           set -euo pipefail
@@ -102,12 +144,14 @@ jobs:
             --redact \
             --report-format sarif --report-path gitleaks.sarif \
             --exit-code 1
+
       # A finding here is not "delete the commit". History rewriting on a shared
       # repo is a bad first move and does not help: the secret is already on
       # someone's laptop and in GitHub's fork network. The runbook order is
       # ROTATE -> revoke -> then decide about history. See docs/03-gates-and-waivers.md.
       - if: failure()
         run: echo "::error::Secret in history. ROTATE the credential first; rewriting history is not containment."
+
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: always()
         with: { name: gitleaks-sarif, path: gitleaks.sarif, retention-days: 30 }
@@ -149,6 +193,7 @@ jobs:
           exit-code: "0"
           format: table
           output: trivy-informational.txt
+
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: always()
         with: { name: trivy-reports, path: "trivy-*", retention-days: 30 }
@@ -158,27 +203,37 @@ jobs:
     runs-on: ubuntu-24.04
     needs: waiver-integrity
     permissions: { contents: read }
-    container:
-      # Version-pinned, not digest-pinned, and that is a knowingly weaker pin than
-      # the SHA pins on every action above. Resolve and substitute the digest at
-      # rollout with:
-      #   crane digest semgrep/semgrep:1.99.0
-      # I have not invented a digest here rather than commit a plausible-looking
-      # one a reviewer would trust.
-      image: semgrep/semgrep:1.99.0
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { persist-credentials: false }
-      # Day one this is `|| true` — WARN. Promotion criterion and the evidence
-      # required to promote are in docs/03-gates-and-waivers.md §"promotion".
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with: { python-version: "3.12" }
+      # Version-pinned via pip rather than a container so the job needs no
+      # registry pull and no digest that would go stale in this repo.
+      - run: pip install --disable-pip-version-check "semgrep==1.99.0"
+
+      # Day one this does not fail the job — WARN. Promotion criterion and the
+      # evidence required to promote are in docs/03-gates-and-waivers.md.
       - name: semgrep
+        id: semgrep
         run: |
-          semgrep scan --config p/owasp-top-ten --config p/secrets --config policy/semgrep/ \
-            --severity ERROR --error --sarif -o semgrep.sarif || SEMGREP_RC=$?
-          echo "semgrep_rc=${SEMGREP_RC:-0}"
-          if [ "${SEMGREP_RC:-0}" != "0" ]; then
+          set -uo pipefail
+          semgrep scan --config p/owasp-top-ten --config policy/semgrep/ \
+            --severity ERROR --error --sarif -o semgrep.sarif --metrics off
+          rc=$?
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" != "0" ]; then
             echo "::warning::SAST findings present. This gate WARNS until 2026-10-15, then BLOCKS."
+            {
+              echo "### SAST (advisory until 2026-10-15)"
+              echo ""
+              echo "Semgrep exited \`$rc\`. Findings are in the \`semgrep-sarif\` artefact."
+              echo "This gate does not block today; see docs/03-gates-and-waivers.md for the"
+              echo "evidence required to promote it."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
+          exit 0
+
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: always()
         with: { name: semgrep-sarif, path: semgrep.sarif, retention-days: 30 }
@@ -195,16 +250,31 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { persist-credentials: false }
+
       - name: install conftest
         run: |
           set -euo pipefail
           curl -fsSL -o /tmp/conftest.tgz \
-            https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
           tar -xzf /tmp/conftest.tgz -C /usr/local/bin conftest
+          conftest --version
+
       - name: conftest — unit tests for the policies themselves
-        run: conftest verify --policy policy/rego
+        run: conftest test --policy policy/rego --parser hcl2 --all-namespaces policy/fixtures/terraform/good/ && conftest verify --policy policy/rego
+
       - name: conftest — enforce against terraform (BLOCKING)
         run: conftest test --policy policy/rego --parser hcl2 --all-namespaces terraform/
+
+      # Asserts the rules still reject the production-today configuration. Without
+      # this a refactor that accidentally neuters every deny rule would go green.
+      - name: conftest — the bad fixture MUST still be rejected
+        run: |
+          set -euo pipefail
+          if conftest test --policy policy/rego --parser hcl2 --all-namespaces policy/fixtures/terraform/bad/; then
+            echo "::error::the known-bad Terraform fixture PASSED — the IaC rules are not enforcing"; exit 1
+          fi
+          echo "bad fixture rejected, as designed"
+
       - name: checkov — breadth, non-blocking
         continue-on-error: true
         uses: bridgecrewio/checkov-action@fcfd4ef72a8469ea29b98a1ba15dc390b1aee1db # v12.2926.0
@@ -224,7 +294,23 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with: { persist-credentials: false }
+      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with: { python-version: "3.12" }
+      - run: pip install --disable-pip-version-check pyyaml
+
+      - name: install kyverno + conftest
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/kyverno.tgz \
+            "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+          tar -xzf /tmp/kyverno.tgz -C /usr/local/bin kyverno
+          curl -fsSL -o /tmp/conftest.tgz \
+            "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+          tar -xzf /tmp/conftest.tgz -C /usr/local/bin conftest
+
       - run: ./scripts/run-policy-tests.sh
+
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
         if: always()
         with: { name: policy-test-output, path: test-output/, retention-days: 30 }
@@ -239,18 +325,22 @@ jobs:
     steps:
       - name: summarise
         run: |
-          set -euo pipefail
-          declare -A r=(
-            [waiver-integrity]="${{ needs.waiver-integrity.result }}"
-            [secrets]="${{ needs.secrets.result }}"
-            [sca]="${{ needs.sca.result }}"
-            [iac]="${{ needs.iac.result }}"
-            [policy-tests]="${{ needs.policy-tests.result }}"
-          )
+          set -uo pipefail
           fail=0
-          for k in "${!r[@]}"; do
-            printf '%-18s %s\n' "$k" "${r[$k]}" | tee -a "$GITHUB_STEP_SUMMARY"
-            [ "${r[$k]}" = "success" ] || fail=1
-          done
-          echo "sast (WARN-only until 2026-10-15): ${{ needs.sast.result }}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Security gates"
+            echo ""
+            echo "| gate | result | blocking |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          add() {
+            printf '| %s | %s | %s |\n' "$1" "$2" "$3" >> "$GITHUB_STEP_SUMMARY"
+            if [ "$3" = "yes" ] && [ "$2" != "success" ]; then fail=1; fi
+          }
+          add waiver-integrity "${{ needs.waiver-integrity.result }}" yes
+          add secrets          "${{ needs.secrets.result }}"          yes
+          add sca              "${{ needs.sca.result }}"              yes
+          add iac              "${{ needs.iac.result }}"              yes
+          add policy-tests     "${{ needs.policy-tests.result }}"     yes
+          add sast             "${{ needs.sast.result }}"             "no (until 2026-10-15)"
           exit $fail

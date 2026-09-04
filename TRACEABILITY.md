@@ -18,7 +18,11 @@
 | `waivers/waivers.yaml` + `scripts/waiver_check.py` | (meta) | keeps the gates above alive; an unwaivable gate is a disabled gate |
 | `docs/03-break-glass.md` | (meta) | the one bypass, time-boxed and audited, so nobody invents an unaudited one |
 | `remediate/workload-fixed.yaml` | T2 | removes docker.sock, hostNetwork, root, RBAC wildcards |
-| `policy/kyverno/policies/*` (7 policies) | T2, T4 | structural prevention of the same manifest being reintroduced |
+| `policy/kyverno/policies/*` (9 policies) | T2, T4 | structural prevention of the same manifest being reintroduced |
+| `policy/kyverno/policies/restrict-privileged-rolebindings.yaml` | T2 | closes the second-order bypass the RBAC fix creates: binding to the `cluster-admin` ClusterRole needs no wildcard of your own |
+| `policy/kyverno/tests/resources/bypass-workload.yaml` | T2, T4 | proves the rules resist someone who has read the rule names, not just the broken manifest |
+| `policy/fixtures/terraform/evasion/` | T3 | proves the IaC rules survive `var`-driven values, `dynamic` blocks, IPv6 and Aurora — the shapes that defeat a naive rule set |
+| `iam/external-secrets-policy.json` | T2 | keeps the secrets operator's breadth out of the workload's identity |
 | `policy/rego/terraform.rego` | T3 | structural prevention of the same RDS/CloudTrail/SG being reintroduced |
 | `iam/pod-identity-policy.json` | T2 | replaces `NotAction: *` with three scoped statements |
 | `k8s/networkpolicy-egress.yaml` + `k8s/istio-egress.yaml` | T5, T2 | default-deny egress, one permitted KYC FQDN |
@@ -28,5 +32,7 @@
 | `docs/06-secrets-rotation.md` | T3 | bounds the useful life of a stolen credential; emergency path measured in minutes |
 | `docs/06-log-redaction.md` | T5 | the leak that needs no exploit |
 | `terraform/cloudtrail.tf` | (evidence for all) | the only reason any of the above is provable after the fact |
+| `ASSUMPTIONS.md` | (all) | states what would have to be different for any of the above to be wrong |
+| `docs/07-operating-model.md` | (all) | the controls above decay without ownership, cadence and measurement; this is what keeps them true in month twelve |
 
 **Built without a matching threat, deliberately:** `.github/dependabot.yml` (hygiene, keeps the T4 gate's false-positive load low rather than mitigating a threat directly) and `terraform/kms.tf` CMKs (the confidentiality threat they address — AWS operator access to disk — is not in my top five; they are here because a bank's examiner asks for key custody, which is a regulatory obligation rather than a threat. Stated as such in `DECISIONS.md` §5).

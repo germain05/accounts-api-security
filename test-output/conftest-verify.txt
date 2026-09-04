@@ -1,2 +1,2 @@
 
-[32m23 tests, 23 passed, 0 warnings, 0 failures, 0 exceptions, 0 skipped[0m
+[32m33 tests, 33 passed, 0 warnings, 0 failures, 0 exceptions, 0 skipped[0m
