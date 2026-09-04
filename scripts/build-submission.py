@@ -169,11 +169,15 @@ BUNDLES: list[tuple[str, list[str], str]] = [
 
     # ---- Section 7: Secrets and data protection ---------------------------
     ("07-1-secrets-delivery.yaml",
-     ["k8s/externalsecret.yaml", "iam/external-secrets-policy.json"],
+     ["k8s/externalsecret.yaml"],
      "Section 7 deliverable: the secrets delivery configuration. No plaintext "
      "credential in the repo or in any committed manifest; mapped to AWS Secrets "
      "Manager via the Secrets Store CSI driver, with External Secrets Operator shown "
-     "as the alternative and the trade-off stated."),
+     "as the alternative and the trade-off stated. The IAM half is 07-4."),
+    ("07-4-external-secrets-iam-policy.json", ["iam/external-secrets-policy.json"],
+     "Section 7 supporting file: the IRSA policy for the secrets operator, kept as a "
+     "separate role from the pod's so the operator's breadth is not inherited by the "
+     "workload identity."),
     ("07-2-rotation.md", ["docs/06-secrets-rotation.md"],
      "Section 7 deliverable: rotation mechanism, interval, emergency procedure, and "
      "target rotation time per credential."),
