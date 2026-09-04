@@ -16,17 +16,19 @@ Nothing was applied against a real cloud. Where production would use AWS, the ma
 ## Run the policy tests
 
 ```bash
-# 1. tools (four binaries, ~60 MB, no package manager needed)
-mkdir -p bin && cd bin
-curl -fsSL https://github.com/kyverno/kyverno/releases/download/v1.13.4/kyverno-cli_v1.13.4_linux_x86_64.tar.gz | tar xz kyverno
-curl -fsSL https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz | tar xz conftest
-curl -fsSL -o cosign https://github.com/sigstore/cosign/releases/download/v2.4.1/cosign-linux-amd64 && chmod +x cosign
-cd .. && export PATH="$PWD/bin:$PATH"
-pip install pyyaml
+# 1. tools — four pinned binaries into ./bin, macOS or Linux, arm64 or x86_64.
+#    Nothing system-wide, no package manager, delete one directory to undo.
+./scripts/install-tools.sh
+export PATH="$PWD/bin:$PATH"
+pip install pyyaml            # the waiver checker's only dependency
 
 # 2. everything
 ./scripts/run-policy-tests.sh
 ```
+
+Versions are pinned to the ones that produced the committed output in
+`test-output/` — a policy suite that passes on a different engine version has
+proven less than it looks.
 
 Expected output — eleven checks, all passing, three of which pass **by failing**:
 
