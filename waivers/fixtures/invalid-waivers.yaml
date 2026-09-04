@@ -1,0 +1,102 @@
+# Negative fixture. scripts/run-policy-tests.sh asserts that
+# `waiver_check.py check` FAILS on this file. Every entry below is a way the
+# waiver mechanism gets quietly defeated in real repos.
+version: 1
+
+waivers:
+  # 1. EXPIRED. The whole point: this must fail the build, not stop suppressing
+  #    silently. On 2026-09-04 this lapsed 40 days ago.
+  - id: SEC-1900-expired
+    tool: trivy
+    finding: CVE-2023-99999
+    scope: github.com/example/lib
+    severity: HIGH
+    class: fix-in-flight
+    reason: "Waiting on the upstream maintainer to cut a release with the patch applied."
+    compensating_control: "WAF rule blocking the vulnerable request shape."
+    ticket: SEC-1900
+    requested_by: r.mehta@example-bank.com
+    approved_by: p.okafor@example-bank.com
+    created: 2026-06-27
+    expires: 2026-07-26
+
+  # 2. SELF-APPROVAL. The requester signed their own exemption.
+  - id: SEC-1901-self-approved
+    tool: semgrep
+    finding: python.lang.security.audit.exec-detected
+    scope: app/tools/
+    severity: MEDIUM
+    class: not-exploitable
+    reason: "The exec call takes a constant string from a build-time template, not user input."
+    compensating_control: "Path is not reachable from any HTTP handler."
+    ticket: SEC-1901
+    requested_by: r.mehta@example-bank.com
+    approved_by: r.mehta@example-bank.com
+    created: 2026-09-01
+    expires: 2026-11-01
+
+  # 3. LIFETIME CAP BREACH. A CRITICAL waived for a year is a deleted control
+  #    wearing a waiver's clothes.
+  - id: SEC-1902-too-long
+    tool: trivy
+    finding: CVE-2026-11111
+    scope: app/vendor/
+    severity: CRITICAL
+    class: accepted-risk
+    reason: "Remediation requires a framework major-version upgrade scheduled for next FY."
+    compensating_control: "Runtime detection rule on the exploit primitive."
+    ticket: SEC-1902
+    requested_by: r.mehta@example-bank.com
+    approved_by: a.lindqvist@example-bank.com
+    created: 2026-09-01
+    expires: 2027-09-01
+
+  # 4. APPROVER WITHOUT AUTHORITY. p.okafor may approve up to HIGH and may not
+  #    accept business risk; this entry asks for both.
+  - id: SEC-1903-wrong-approver
+    tool: trivy
+    finding: CVE-2026-22222
+    scope: app/
+    severity: CRITICAL
+    class: accepted-risk
+    reason: "Business has decided to ship ahead of the remediation window for the quarter."
+    compensating_control: "Additional monitoring on the affected endpoint."
+    ticket: SEC-1903
+    requested_by: r.mehta@example-bank.com
+    approved_by: p.okafor@example-bank.com
+    created: 2026-09-01
+    expires: 2026-09-10
+
+  # 5. A REAL SECRET, WAIVED. This is the one that ends careers. gitleaks
+  #    findings are only waivable as proven false positives; a live credential is
+  #    rotated, never accepted.
+  - id: SEC-1904-secret-accepted
+    tool: gitleaks
+    finding: aws-access-token
+    scope: deploy/legacy/
+    severity: HIGH
+    class: accepted-risk
+    pattern: 'AKIA[0-9A-Z]{16}'
+    reason: "The key belongs to a decommissioned account and rotating it would break the legacy job."
+    compensating_control: "The legacy account has no attached policies."
+    ticket: SEC-1904
+    requested_by: r.mehta@example-bank.com
+    approved_by: a.lindqvist@example-bank.com
+    created: 2026-09-01
+    expires: 2026-09-20
+
+  # 6. NO TICKET, NO COMPENSATING CONTROL, REASON TOO SHORT. The "just make it
+  #    go away" waiver.
+  - id: SEC-1905-lazy
+    tool: conftest
+    finding: deny_rds_public
+    scope: aws_db_instance.legacy
+    severity: HIGH
+    class: not-exploitable
+    reason: "not an issue"
+    compensating_control: ""
+    ticket: "TODO"
+    requested_by: r.mehta@example-bank.com
+    approved_by: p.okafor@example-bank.com
+    created: 2026-09-01
+    expires: 2026-09-15

@@ -1,0 +1,55 @@
+# The manifest as it is running in production today (section 4a), committed
+# verbatim as a NEGATIVE fixture. Every Kyverno policy in policy/kyverno/policies
+# must reject this, and `kyverno test` asserts exactly that.
+#
+# Do not "fix" this file. Its job is to fail. The ONLY change from the production
+# manifest is metadata.name (accounts-api -> accounts-api-legacy), so that this
+# fixture and the remediated one can be loaded into the same `kyverno test` run.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accounts-api-legacy
+  namespace: accounts
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: accounts-api
+  template:
+    metadata:
+      labels:
+        app: accounts-api
+    spec:
+      serviceAccountName: accounts-api
+      hostNetwork: true
+      containers:
+        - name: api
+          image: 123456789012.dkr.ecr.ap-south-1.amazonaws.com/accounts-api:latest
+          securityContext:
+            privileged: false
+            runAsUser: 0
+          envFrom:
+            - secretRef:
+                name: accounts-api-env
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: host-logs
+              mountPath: /hostlogs
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+        - name: host-logs
+          hostPath:
+            path: /var/log
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: accounts-api-legacy
+  namespace: accounts
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "pods", "configmaps"]
+    verbs: ["*"]

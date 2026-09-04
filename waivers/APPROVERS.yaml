@@ -1,0 +1,30 @@
+# Who may approve a waiver, and for what.
+#
+# Changing this file requires review from @example-bank/security-leads
+# (see .github/CODEOWNERS) — otherwise the approver list is self-serve and the
+# whole mechanism is decorative.
+#
+# `identity` must be the email in the approver's Sigstore certificate, because
+# scripts/waiver_check.py passes it to `cosign verify-blob --certificate-identity`.
+# That is the link that makes "approved_by" a cryptographic claim rather than a
+# string anyone can type.
+
+approvers:
+  - identity: p.okafor@example-bank.com
+    role: Security Engineering — team lead
+    may_approve: [LOW, MEDIUM, HIGH]
+    may_accept_risk: false          # can waive analysis-backed findings, not business risk
+
+  - identity: a.lindqvist@example-bank.com
+    role: Head of Platform Security
+    may_approve: [LOW, MEDIUM, HIGH, CRITICAL]
+    may_accept_risk: true
+
+  - identity: s.varma@example-bank.com
+    role: CISO delegate (risk committee)
+    may_approve: [LOW, MEDIUM, HIGH, CRITICAL]
+    may_accept_risk: true
+
+# Deliberately absent: the accounts-api engineering team. They request waivers;
+# they do not approve their own. `requested_by == approved_by` is a hard failure
+# in the checker.

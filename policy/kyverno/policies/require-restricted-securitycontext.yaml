@@ -1,0 +1,141 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-restricted-securitycontext
+  annotations:
+    policies.kyverno.io/title: Restricted container security context
+    policies.kyverno.io/severity: high
+    example-bank.io/threat: "T2 — finding A4"
+    # ---- rollout ----
+    example-bank.io/day-one-mode: "Audit"
+    example-bank.io/promotion-criteria: >-
+      Promote to Enforce when (1) the Kyverno PolicyReport shows zero failures
+      across all namespaces for 14 consecutive days, (2) each of the other 12
+      service owners has acknowledged in the platform channel, and (3) the two
+      known offenders (ns/payments legacy JVM needing CAP_NET_BIND_SERVICE, and
+      the vendor OTel collector running as root) have either migrated or received
+      a namespace-scoped exception PR. Target: 4 weeks after audit-mode landing.
+    example-bank.io/rationale-for-audit: >-
+      This is the policy most likely to break somebody else's workload, and I do
+      not own those workloads. Shipping it Enforce on a cluster with a dozen other
+      teams on day one is how a platform team gets its admission controller
+      uninstalled. ns/accounts is exempted from the audit grace period below and
+      is Enforce immediately, because I do own that one.
+spec:
+  validationFailureAction: Audit
+  background: true
+
+  # ns/accounts opts in to Enforce immediately. Rolling out on my own service
+  # first is the evidence I will use to ask the other teams for the same.
+  validationFailureActionOverrides:
+    - action: Enforce
+      namespaces: [accounts]
+
+  rules:
+    - name: run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          Every container must set securityContext.runAsNonRoot: true explicitly.
+          Note the absence of a conditional anchor: omitting the field is the
+          failure mode this rule exists for, and `=(runAsNonRoot)` would let the
+          production manifest through untouched. [T2/A4]
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  runAsNonRoot: true
+
+    # Separate rule because `runAsNonRoot: true` next to `runAsUser: 0` is a real
+    # thing people write. The kubelet does reject it — but only after the pod has
+    # been admitted and scheduled, so it is an outage rather than a rejection, and
+    # in an Audit-mode namespace nobody would learn anything from it.
+    - name: no-uid-zero
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: "runAsUser must not be 0. [T2/A4]"
+        foreach:
+          - list: "request.object.spec.containers[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.securityContext.runAsUser || `-1` }}"
+                    operator: Equals
+                    value: 0
+
+    - name: no-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          allowPrivilegeEscalation must be false and privileged must not be true.
+          Without it a setuid binary or a file capability inside the image is an
+          in-container root path. [T2/A4]
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: "false"
+                  =(privileged): "false"
+
+    - name: drop-all-capabilities
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          Containers must drop ALL capabilities. An HTTP service on 8080 needs
+          none of them. [T2/A4]
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  capabilities:
+                    drop:
+                      - ALL
+
+    - name: seccomp-runtime-default
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          seccompProfile must be RuntimeDefault or Localhost. Unconfined leaves
+          the whole syscall surface reachable, which is the difference between a
+          runtime CVE being exploitable and not. [T2/A4]
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  seccompProfile:
+                    type: "RuntimeDefault | Localhost"

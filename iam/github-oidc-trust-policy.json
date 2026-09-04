@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Trust policy for arn:aws:iam::123456789012:role/gha-accounts-api-deploy — the PROD deploy role.",
+    "Threat T1. See docs/02-build-integrity.md for what this scoping denies.",
+    "JSON has no comments; this key is stripped by terraform/iam_github_oidc.tf before use and exists",
+    "only so a reviewer reads the intent next to the condition it belongs to."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitHubActionsProductionDeployOnly",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:example-bank/accounts-api:environment:production",
+          "token.actions.githubusercontent.com:repository_owner_id": "123456",
+          "token.actions.githubusercontent.com:job_workflow_ref": "example-bank/accounts-api/.github/workflows/build-release.yml@refs/heads/main"
+        }
+      }
+    }
+  ]
+}

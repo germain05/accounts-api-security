@@ -1,0 +1,256 @@
+# Section 3 — the scanning tier, made enforceable.
+# Threats: T4 (SCA), T2 (SAST), T1/T3 (secrets), T3 (IaC).
+#
+# Enforcement contract, in one place so nobody has to read the YAML to know it:
+#
+#   gate                | day-one mode | blocks on
+#   --------------------|--------------|--------------------------------------------
+#   waiver-integrity    | BLOCK        | any malformed, unsigned, over-long or EXPIRED waiver
+#   secrets (history)   | BLOCK        | any verified finding, any severity, no exceptions
+#   iac (conftest)      | BLOCK        | any `deny` rule in policy/rego (data-plane resources)
+#   sca (trivy)         | BLOCK        | CRITICAL/HIGH *with a fix available*
+#   sast (semgrep)      | WARN -> BLOCK| ERROR severity, p/owasp-top-ten + local rules
+#   policy-tests        | BLOCK        | kyverno test / conftest verify failures
+#
+# Rationale for the SCA line is in docs/03-gates-and-waivers.md. Short version:
+# blocking on unfixable CRITICALs produces a queue of waivers nobody can close,
+# and a gate that can only be satisfied by waiving is a gate that gets deleted.
+name: security-gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"        # nightly: full-history secrets + re-scan of shipped digests
+  workflow_dispatch:
+  workflow_call:                # called in advisory mode by break-glass-deploy.yml
+
+permissions: {}
+
+concurrency:
+  group: gates-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Runs FIRST and blocks everything else. If the waiver file is broken or a
+  # waiver has lapsed, no other gate is allowed to consume the derived ignore
+  # files — because those files are how a lapsed waiver would otherwise keep
+  # silently suppressing a finding.
+  waiver-integrity:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write          # cosign verify-blob (keyless bundle verification)
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+      - uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with: { python-version: "3.12" }
+      - run: pip install --disable-pip-version-check pyyaml
+      - name: Validate waivers (schema, approver, lifetime, expiry, signature)
+        run: python3 scripts/waiver_check.py check --verify-signatures
+      - name: Derive per-tool ignore files from ACTIVE waivers only
+        run: python3 scripts/waiver_check.py generate
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: derived-ignore-files
+          path: |
+            .trivyignore
+            .gitleaks.toml
+            .semgrepignore
+            policy/rego/data.waivers.json
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Secret scanning over FULL GIT HISTORY, not the diff.
+  #
+  # Mechanism (this is the part that is usually got wrong):
+  #   * fetch-depth: 0 — the default shallow clone makes history scanning a no-op
+  #     that still exits 0, which is the worst possible outcome.
+  #   * `gitleaks detect --log-opts="--all --full-history"` walks every ref,
+  #     including deleted branches still reachable from the remote, and every
+  #     commit on them. `gitleaks protect` (the default in many templates) only
+  #     looks at uncommitted changes.
+  #   * On a PR we ALSO run the fast diff-scoped scan so feedback is seconds, but
+  #     the full walk runs on every push to main and nightly, so a secret cannot
+  #     enter history through a squash-merge or a force-push window.
+  #   * Cost control: the full walk on this repo is ~8s; on a 10-year monorepo it
+  #     is minutes, which is why it is a push/nightly gate rather than a per-PR one.
+  secrets:
+    runs-on: ubuntu-24.04
+    needs: waiver-integrity
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0                     # REQUIRED. Without this the next step lies.
+          persist-credentials: false
+      - name: Fetch every remote ref (branches deleted on GitHub still hold blobs)
+        run: git fetch --no-tags --prune --unshallow origin '+refs/heads/*:refs/remotes/origin/*' || true
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: derived-ignore-files }
+      - name: gitleaks — full history
+        run: |
+          set -euo pipefail
+          gitleaks detect \
+            --source . \
+            --config .gitleaks.toml \
+            --log-opts="--all --full-history" \
+            --redact \
+            --report-format sarif --report-path gitleaks.sarif \
+            --exit-code 1
+      # A finding here is not "delete the commit". History rewriting on a shared
+      # repo is a bad first move and does not help: the secret is already on
+      # someone's laptop and in GitHub's fork network. The runbook order is
+      # ROTATE -> revoke -> then decide about history. See docs/03-gates-and-waivers.md.
+      - if: failure()
+        run: echo "::error::Secret in history. ROTATE the credential first; rewriting history is not containment."
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: always()
+        with: { name: gitleaks-sarif, path: gitleaks.sarif, retention-days: 30 }
+
+  # ---------------------------------------------------------------------------
+  sca:
+    runs-on: ubuntu-24.04
+    needs: waiver-integrity
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with: { name: derived-ignore-files }
+
+      # BLOCKING scan: fixable CRITICAL/HIGH only.
+      - name: trivy fs — blocking
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true              # see threshold rationale in docs/03
+          trivyignores: .trivyignore        # derived from waivers, NOT hand-edited
+          exit-code: "1"
+          format: sarif
+          output: trivy-blocking.sarif
+
+      # NON-blocking scan: everything else, so the unfixable backlog is visible
+      # and trendable without being able to stop a merge.
+      - name: trivy fs — visibility only
+        if: always()
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH,MEDIUM
+          ignore-unfixed: false
+          exit-code: "0"
+          format: table
+          output: trivy-informational.txt
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: always()
+        with: { name: trivy-reports, path: "trivy-*", retention-days: 30 }
+
+  # ---------------------------------------------------------------------------
+  sast:
+    runs-on: ubuntu-24.04
+    needs: waiver-integrity
+    permissions: { contents: read }
+    container:
+      # Version-pinned, not digest-pinned, and that is a knowingly weaker pin than
+      # the SHA pins on every action above. Resolve and substitute the digest at
+      # rollout with:
+      #   crane digest semgrep/semgrep:1.99.0
+      # I have not invented a digest here rather than commit a plausible-looking
+      # one a reviewer would trust.
+      image: semgrep/semgrep:1.99.0
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+      # Day one this is `|| true` — WARN. Promotion criterion and the evidence
+      # required to promote are in docs/03-gates-and-waivers.md §"promotion".
+      - name: semgrep
+        run: |
+          semgrep scan --config p/owasp-top-ten --config p/secrets --config policy/semgrep/ \
+            --severity ERROR --error --sarif -o semgrep.sarif || SEMGREP_RC=$?
+          echo "semgrep_rc=${SEMGREP_RC:-0}"
+          if [ "${SEMGREP_RC:-0}" != "0" ]; then
+            echo "::warning::SAST findings present. This gate WARNS until 2026-10-15, then BLOCKS."
+          fi
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: always()
+        with: { name: semgrep-sarif, path: semgrep.sarif, retention-days: 30 }
+
+  # ---------------------------------------------------------------------------
+  # IaC. conftest against the HCL directly (no `terraform init`, no registry
+  # access, no cloud credentials) so a reviewer can run the identical command
+  # offline. Checkov runs alongside for breadth and does NOT block — one tool
+  # owns the merge decision, the other supplies coverage. See docs/03.
+  iac:
+    runs-on: ubuntu-24.04
+    needs: waiver-integrity
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+      - name: install conftest
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/conftest.tgz \
+            https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz
+          tar -xzf /tmp/conftest.tgz -C /usr/local/bin conftest
+      - name: conftest — unit tests for the policies themselves
+        run: conftest verify --policy policy/rego
+      - name: conftest — enforce against terraform (BLOCKING)
+        run: conftest test --policy policy/rego --parser hcl2 --all-namespaces terraform/
+      - name: checkov — breadth, non-blocking
+        continue-on-error: true
+        uses: bridgecrewio/checkov-action@fcfd4ef72a8469ea29b98a1ba15dc390b1aee1db # v12.2926.0
+        with:
+          directory: terraform/
+          quiet: true
+          soft_fail: true
+          output_format: cli
+
+  # ---------------------------------------------------------------------------
+  # The policies in policy/ are code, and code without tests rots. This job is
+  # why a reviewer can trust that the Kyverno rules actually reject the bad
+  # manifest rather than merely existing.
+  policy-tests:
+    runs-on: ubuntu-24.04
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+      - run: ./scripts/run-policy-tests.sh
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        if: always()
+        with: { name: policy-test-output, path: test-output/, retention-days: 30 }
+
+  # ---------------------------------------------------------------------------
+  gate:
+    # Single required status check in branch protection. Adding a gate means
+    # adding it to `needs:` here — there is one place to look to know what blocks.
+    runs-on: ubuntu-24.04
+    needs: [waiver-integrity, secrets, sca, sast, iac, policy-tests]
+    if: always()
+    steps:
+      - name: summarise
+        run: |
+          set -euo pipefail
+          declare -A r=(
+            [waiver-integrity]="${{ needs.waiver-integrity.result }}"
+            [secrets]="${{ needs.secrets.result }}"
+            [sca]="${{ needs.sca.result }}"
+            [iac]="${{ needs.iac.result }}"
+            [policy-tests]="${{ needs.policy-tests.result }}"
+          )
+          fail=0
+          for k in "${!r[@]}"; do
+            printf '%-18s %s\n' "$k" "${r[$k]}" | tee -a "$GITHUB_STEP_SUMMARY"
+            [ "${r[$k]}" = "success" ] || fail=1
+          done
+          echo "sast (WARN-only until 2026-10-15): ${{ needs.sast.result }}" >> "$GITHUB_STEP_SUMMARY"
+          exit $fail

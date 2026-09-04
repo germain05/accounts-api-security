@@ -1,0 +1,3 @@
+::error::SEC-2041-trivy-CVE-2024-45337: signature does NOT verify for approver p.okafor@example-bank.com — main.go:74: error during command execution: invalid signature when validating ASN.1 encoded signature
+
+FAIL: 1 waiver problem(s); 1 waiver(s) examined.

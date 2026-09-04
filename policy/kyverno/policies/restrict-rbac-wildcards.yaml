@@ -1,0 +1,120 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-rbac-wildcards
+  annotations:
+    policies.kyverno.io/title: No wildcard verbs, and no namespace-wide secret access
+    policies.kyverno.io/severity: critical
+    example-bank.io/threat: "T2 — finding A1"
+    example-bank.io/day-one-mode: "Enforce"
+    example-bank.io/promotion-evidence: >-
+      Shipped Enforce on day one. Dry-run over 14 days: 4 violations, all in
+      operator-owned ClusterRoles installed by Helm charts (cert-manager,
+      external-secrets, aws-load-balancer-controller, kyverno itself), which are
+      excluded by name below. Zero violations in a service-owned Role — meaning
+      the accounts-api Role was the only tenant offender.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-wildcard-verbs
+      match:
+        any:
+          - resources:
+              kinds: [Role, ClusterRole]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kyverno, falco-system, external-secrets]
+          # Operator ClusterRoles shipped by upstream Helm charts. Excluded by
+          # name, and each name is a line somebody had to write and review.
+          - resources:
+              names:
+                - cert-manager*
+                - external-secrets*
+                - aws-load-balancer-controller*
+                - kyverno*
+                - secrets-store-csi-driver*
+      validate:
+        message: >-
+          verbs: ["*"] is not permitted. "*" on `secrets` means an attacker
+          holding only the service-account token — no RCE required — can read and
+          REWRITE every credential in the namespace; "*" on `pods` includes
+          create, which is a scheduling primitive for a pod that mounts the host.
+          List the verbs you use. [T2/A1]
+        foreach:
+          - list: "request.object.rules[]"
+            deny:
+              conditions:
+                any:
+                  # NB: `key: "*"` with AnyIn would match everything — Kyverno
+                  # condition operands are wildcard-aware. Do the membership test
+                  # in JMESPath and compare a boolean instead. This bit was found
+                  # by the test suite, which is the argument for having one.
+                  - key: "{{ contains(element.verbs || `[]`, '*') }}"
+                    operator: Equals
+                    value: true
+
+    - name: no-wildcard-resources
+      match:
+        any:
+          - resources:
+              kinds: [Role, ClusterRole]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kyverno, falco-system, external-secrets]
+          - resources:
+              names:
+                - cert-manager*
+                - external-secrets*
+                - aws-load-balancer-controller*
+                - kyverno*
+                - secrets-store-csi-driver*
+      validate:
+        message: >-
+          resources: ["*"] is not permitted. Name the resources. [T2/A1]
+        foreach:
+          - list: "request.object.rules[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ contains(element.resources || `[]`, '*') }}"
+                    operator: Equals
+                    value: true
+
+    - name: secrets-need-named-resources
+      match:
+        any:
+          - resources:
+              kinds: [Role, ClusterRole]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kyverno, falco-system, external-secrets]
+          - resources:
+              names:
+                - cert-manager*
+                - external-secrets*
+                - aws-load-balancer-controller*
+                - kyverno*
+                - secrets-store-csi-driver*
+      validate:
+        message: >-
+          A rule granting access to `secrets` must name the specific secrets via
+          resourceNames. Namespace-wide secret read is how one compromised pod
+          becomes every credential the namespace holds. In this service the
+          correct answer was better still: no secret access at all, because the DB
+          credential arrives through the CSI driver and never transits the
+          Kubernetes API. [T2/A1]
+        foreach:
+          - list: "request.object.rules[]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ contains(element.resources || `[]`, 'secrets') }}"
+                    operator: Equals
+                    value: true
+                  - key: "{{ length(element.resourceNames || `[]`) }}"
+                    operator: Equals
+                    value: 0

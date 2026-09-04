@@ -1,0 +1,57 @@
+# A third fixture: not the obviously-broken production manifest, and not the
+# remediated one. This is what the manifest looks like after somebody has read
+# the policy names and tried to satisfy them without changing what they wanted to
+# do. Every one of these is a real review pattern.
+#
+# It must still be rejected.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: accounts-api-bypass
+  namespace: accounts
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: accounts-api-bypass }
+  template:
+    metadata:
+      labels: { app: accounts-api-bypass }
+    spec:
+      serviceAccountName: accounts-api
+      hostNetwork: false          # looks compliant
+      containers:
+        - name: api
+          # Pinned by digest — but to Docker Hub, not our registry. Satisfies
+          # require-image-digest; must be caught by restrict-registries.
+          image: docker.io/library/nginx@sha256:0d17b565c37bcbd895e9d92315a05c1c3c9a29f762b011a10c54a66cd53c9b31
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 0          # contradicts runAsNonRoot; kubelet rejects at runtime,
+                                  # but only after the pod is admitted and scheduled
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: Unconfined    # "I set a seccompProfile" — the wrong one
+          # envFrom avoided; secretKeyRef used instead. Same outcome: the
+          # credential lands in the process environment.
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: accounts-api-env
+                  key: password
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+      volumes:
+        # hostPath renamed to something innocuous and pointed at a "safe" path.
+        # The policy denies the volume TYPE, not a path allowlist, precisely so
+        # this does not work.
+        - name: cache
+          hostPath:
+            path: /var/tmp/accounts-cache
+            type: DirectoryOrCreate

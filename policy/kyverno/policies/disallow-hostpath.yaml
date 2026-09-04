@@ -1,0 +1,41 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-hostpath
+  annotations:
+    policies.kyverno.io/title: Disallow hostPath volumes
+    policies.kyverno.io/severity: critical
+    example-bank.io/threat: "T2 — findings A3, A7"
+    example-bank.io/day-one-mode: "Enforce"
+    example-bank.io/promotion-evidence: >-
+      Shipped Enforce on day one for tenant namespaces. Dry-run over 14 days found
+      hostPath only in the three excluded infrastructure namespaces plus the
+      CSI/CNI daemonsets, which are excluded by namespace rather than by path —
+      a path allowlist is a bypass waiting to be discovered.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-hostpath-volumes
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch, aws-observability]
+      validate:
+        message: >-
+          hostPath volumes are not permitted. Any hostPath is a node-filesystem
+          primitive: /var/run/docker.sock is node root, /var/log is every other
+          team's container output, and '/' is both. Use emptyDir for scratch and
+          the Secrets Store CSI driver for credentials. [T2/A3,A7]
+        foreach:
+          - list: "request.object.spec.volumes[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.keys(@) }}"
+                    operator: AnyIn
+                    value: ["hostPath"]

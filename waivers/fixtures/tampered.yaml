@@ -1,0 +1,22 @@
+# Negative fixture: SEC-2041 with `expires` edited after approval.
+# The lifetime cap still passes and the date is still in the future, so only
+# the signature catches this. run-policy-tests.sh asserts it FAILS.
+version: 1
+waivers:
+- id: SEC-2041-trivy-CVE-2024-45337
+  tool: trivy
+  finding: CVE-2024-45337
+  scope: golang.org/x/crypto/ssh
+  severity: HIGH
+  class: not-exploitable
+  reason: golang.org/x/crypto is pulled in transitively by the AWS SDK's SSO credential
+    provider. accounts-api never opens an SSH connection and the vulnerable ServerConfig.PublicKeyCallback
+    path is unreachable from any entrypoint; confirmed with `go mod why` and a callgraph
+    check over cmd/ and internal/.
+  compensating_control: Egress NetworkPolicy denies port 22 outbound; Falco rule accounts_api_unexpected_egress
+    fires on any non-443 socket from the pod.
+  ticket: SEC-2041
+  requested_by: r.mehta@example-bank.com
+  approved_by: p.okafor@example-bank.com
+  created: 2026-08-28
+  expires: '2026-09-25'

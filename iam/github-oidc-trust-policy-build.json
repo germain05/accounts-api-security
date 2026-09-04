@@ -1,0 +1,28 @@
+{
+  "_comment": [
+    "Trust policy for arn:aws:iam::210987654321:role/gha-accounts-api-ecr-push — the BUILD account role.",
+    "Weaker than the deploy role on purpose: it may push an image, it may not touch prod.",
+    "Threat T1."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitHubActionsMainBranchBuildOnly",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::210987654321:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:example-bank/accounts-api:ref:refs/heads/main",
+          "token.actions.githubusercontent.com:repository_owner_id": "123456"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:job_workflow_ref": "example-bank/accounts-api/.github/workflows/build-release.yml@*"
+        }
+      }
+    }
+  ]
+}

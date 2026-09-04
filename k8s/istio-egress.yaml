@@ -1,0 +1,101 @@
+# Layer 2 of the egress control: L7 identity of the destination. Threat T5.
+#
+# Why this layer exists at all: a NetworkPolicy allows IPs, and the KYC provider
+# is a SaaS behind a CDN whose IPs change without notice. Allowing their current
+# /24 means either (a) a broken integration the week they re-IP, or (b) an
+# allowlist so wide it includes every other tenant of the same CDN. Neither is an
+# egress control. Pinning the FQDN and the server certificate is.
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: kyc-provider
+  namespace: accounts
+spec:
+  hosts:
+    - kyc.example-kyc.com
+  ports:
+    - number: 443
+      name: https
+      protocol: TLS
+  resolution: DNS
+  location: MESH_EXTERNAL
+---
+# REGISTRY_ONLY is the line that makes this a deny-by-default: anything not in the
+# mesh registry is refused by the sidecar, rather than passed through.
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: mesh-egress-posture
+spec:
+  meshConfig:
+    outboundTrafficPolicy:
+      mode: REGISTRY_ONLY
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: kyc-egress
+  namespace: istio-system
+spec:
+  selector:
+    istio: egressgateway
+  servers:
+    - port:
+        number: 443
+        name: tls
+        protocol: TLS
+      hosts:
+        - "accounts/kyc.example-kyc.com"
+      tls:
+        mode: PASSTHROUGH
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: kyc-through-egress-gateway
+  namespace: accounts
+spec:
+  hosts:
+    - kyc.example-kyc.com
+  gateways:
+    - mesh
+    - istio-system/kyc-egress
+  tls:
+    - match:
+        - port: 443
+          sniHosts: [kyc.example-kyc.com]
+          gateways: [mesh]
+          sourceLabels: { app: accounts-api }   # only this workload, not the namespace
+      route:
+        - destination:
+            host: istio-egressgateway.istio-system.svc.cluster.local
+            port: { number: 443 }
+    - match:
+        - port: 443
+          sniHosts: [kyc.example-kyc.com]
+          gateways: [istio-system/kyc-egress]
+      route:
+        - destination:
+            host: kyc.example-kyc.com
+            port: { number: 443 }
+---
+# Certificate pinning at the egress gateway. Without this, an attacker with DNS
+# control (or a mis-issued certificate from any of the ~150 CAs in the default
+# trust store) satisfies the FQDN allowlist and receives the customer data.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: kyc-provider-tls
+  namespace: istio-system
+spec:
+  host: kyc.example-kyc.com
+  trafficPolicy:
+    portLevelSettings:
+      - port: { number: 443 }
+        tls:
+          mode: SIMPLE
+          sni: kyc.example-kyc.com
+          # CA bundle restricted to the provider's issuing CA, not the system store.
+          caCertificates: /etc/istio/kyc-ca/ca.pem
+          subjectAltNames: ["kyc.example-kyc.com"]

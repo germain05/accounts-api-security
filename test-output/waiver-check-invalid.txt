@@ -1,0 +1,12 @@
+::warning::SEC-1903-wrong-approver: expires 2026-09-10 (in 6d) — renewal or fix needed this week, ticket SEC-1903
+::error::SEC-1900-expired: EXPIRED on 2026-07-26 (40d ago). The finding is live again. Fix it, or open a renewal PR against SEC-1900 for a fresh two-person approval.
+::error::SEC-1901-self-approved: self-approval — requested_by and approved_by must differ
+::error::SEC-1901-self-approved: approved_by 'r.mehta@example-bank.com' is not in waivers/APPROVERS.yaml
+::error::SEC-1902-too-long: lifetime 365d exceeds the 14d cap for CRITICAL
+::error::SEC-1903-wrong-approver: approved_by 'p.okafor@example-bank.com' may approve ['HIGH', 'LOW', 'MEDIUM'] — not CRITICAL
+::error::SEC-1904-secret-accepted: gitleaks findings may only be waived as 'false-positive'. A real secret is rotated, not waived.
+::error::SEC-1905-lazy: ticket must be SEC-nnn (a waiver with no tracking issue is a decision nobody revisits)
+::error::SEC-1905-lazy: reason is too short to be a reason
+::error::SEC-1905-lazy: compensating_control is mandatory — 'we accept it' is not a control
+
+FAIL: 9 waiver problem(s); 6 waiver(s) examined.

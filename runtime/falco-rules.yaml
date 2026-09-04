@@ -1,0 +1,138 @@
+# Custom Falco rules for accounts-api. Written for this workload, not lifted from
+# the default ruleset — the default rules describe generic Linux badness, and on a
+# cluster shared with a dozen teams that is where alert fatigue comes from.
+#
+# The design rule I applied: alert on things that are *impossible* in the
+# remediated workload, not on things that are *suspicious* in general. A rule with
+# a zero expected rate is a rule the on-call will still believe in six months.
+#
+# Threats: T2 (pod identity / lateral movement), T5 (data egress).
+
+################################################################################
+# scoping
+################################################################################
+
+- macro: accounts_api_container
+  condition: >
+    (container.id != host and
+     k8s.ns.name = "accounts" and
+     k8s.pod.label.app = "accounts-api")
+
+# The single binary in the distroless image. PID 1 and nothing else.
+- list: accounts_api_expected_binaries
+  items: ["accounts-api"]
+
+- macro: accounts_api_main_process
+  condition: (proc.name in (accounts_api_expected_binaries) and proc.vpid = 1)
+
+################################################################################
+# RULE 1 — the one I would actually keep if I could only keep one.
+#
+# The database credential arrives as a file at a known path (Secrets Store CSI
+# driver, k8s/externalsecret.yaml). In the remediated workload EXACTLY ONE
+# process ever opens it: PID 1, the service binary, at startup and on rotation.
+#
+# Anything else reading that path means code is executing in the container that
+# is not the service — an RCE payload, a debug shell, an injected library, or a
+# sidecar somebody added without review. There is no benign version of this
+# event, which is why it is CRITICAL and why it pages rather than tickets.
+#
+# This is deliberately narrower than the stock "Read sensitive file" rule: that
+# one covers /etc/shadow and friends and fires constantly on package managers
+# across the fleet. This one has an expected rate of zero.
+################################################################################
+
+- rule: accounts_api_credential_read_by_unexpected_process
+  desc: >-
+    A process other than the accounts-api service binary opened the mounted
+    database credential inside an accounts-api container. In this workload the
+    credential file has exactly one legitimate reader.
+  condition: >
+    open_read
+    and accounts_api_container
+    and fd.name startswith "/var/run/secrets/db/"
+    and not accounts_api_main_process
+  output: >-
+    accounts-api database credential read by an unexpected process
+    (threat=T2 rule_version=3
+     file=%fd.name
+     proc=%proc.name pid=%proc.pid vpid=%proc.vpid ppid=%proc.ppid
+     cmdline=%proc.cmdline pcmdline=%proc.pcmdline exepath=%proc.exepath
+     user=%user.name uid=%user.uid
+     container=%container.id image=%container.image.repository:%container.image.tag
+     digest=%container.image.digest
+     pod=%k8s.pod.name ns=%k8s.ns.name node=%k8s.node.name
+     start=%evt.time)
+  priority: CRITICAL
+  tags: [accounts-api, T2, credential-access, mitre_credential_access, T1552.001, page]
+
+################################################################################
+# RULE 2 — egress that the network layer let through.
+#
+# The NetworkPolicy and the Istio egress gateway (k8s/) permit exactly one
+# external destination. This rule catches the cases the network layer cannot:
+# traffic that leaves via the sidecar's allowed path but to a hostname the app
+# resolved itself, and any direct socket that a NetworkPolicy misconfiguration
+# would otherwise let through silently.
+#
+# Named in docs/05-egress.md as the compensating detection for what the egress
+# control admits it cannot stop.
+################################################################################
+
+- list: accounts_api_permitted_egress_ports
+  items: [443, 5432, 9094, 53]
+
+- rule: accounts_api_unexpected_egress
+  desc: >-
+    accounts-api opened an outbound connection on a port outside its known set
+    (443 to the Istio egress sidecar, 5432 to RDS, 9094 to MSK, 53 to CoreDNS).
+    The workload speaks four protocols; anything else is an implant's channel.
+  condition: >
+    outbound
+    and accounts_api_container
+    and not fd.sport in (accounts_api_permitted_egress_ports)
+    and not fd.dport in (accounts_api_permitted_egress_ports)
+    and not fd.net = "127.0.0.0/8"
+  output: >-
+    accounts-api opened an unexpected outbound connection
+    (threat=T5 rule_version=3
+     dest=%fd.rip:%fd.rport proto=%fd.l4proto
+     proc=%proc.name pid=%proc.pid cmdline=%proc.cmdline
+     container=%container.id image=%container.image.repository
+     digest=%container.image.digest
+     pod=%k8s.pod.name ns=%k8s.ns.name node=%k8s.node.name
+     start=%evt.time)
+  priority: CRITICAL
+  tags: [accounts-api, T5, exfiltration, mitre_exfiltration, T1041, page]
+
+################################################################################
+# RULE 3 — anything at all executing that is not the service binary.
+#
+# The image is distroless and readOnlyRootFilesystem is true, so there is no
+# shell, no package manager and nowhere to drop one. Any exec is therefore either
+# an attacker who brought their own, or an engineer who used `kubectl exec` on a
+# production pod holding customer PII — both of which I want to know about, and
+# the second of which is an access-review finding rather than an incident.
+################################################################################
+
+- rule: accounts_api_unexpected_process_spawned
+  desc: >-
+    A process other than the service binary executed inside an accounts-api
+    container. The image is distroless with a read-only root filesystem; there is
+    nothing legitimate to run.
+  condition: >
+    spawned_process
+    and accounts_api_container
+    and not proc.name in (accounts_api_expected_binaries)
+  output: >-
+    Unexpected process executed in accounts-api
+    (threat=T2 rule_version=3
+     proc=%proc.name exepath=%proc.exepath cmdline=%proc.cmdline
+     parent=%proc.pname pcmdline=%proc.pcmdline
+     user=%user.name uid=%user.uid
+     tty=%proc.tty
+     container=%container.id image=%container.image.repository
+     pod=%k8s.pod.name ns=%k8s.ns.name node=%k8s.node.name
+     start=%evt.time)
+  priority: WARNING
+  tags: [accounts-api, T2, execution, mitre_execution, T1059, ticket]

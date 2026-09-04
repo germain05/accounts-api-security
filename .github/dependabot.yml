@@ -1,0 +1,30 @@
+# Traceability note: this maps to no named threat, and TRACEABILITY.md says so.
+# It is here because keeping dependencies current is what keeps the SCA gate's
+# false-positive and unfixable-finding load low enough for the gate to survive —
+# it protects the control rather than the system. Hygiene, honestly labelled.
+version: 2
+updates:
+  # Pinning actions to SHAs (threat T1) makes them invisible to a human reviewer.
+  # Dependabot understands SHA pins and raises PRs that move the pin AND update
+  # the version comment, which is the only sustainable way to keep pinning.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    labels: [dependencies, security]
+
+  - package-ecosystem: gomod
+    directory: "/app"
+    schedule: { interval: weekly }
+    groups:
+      # One PR for the routine noise, separate PRs for security updates so the
+      # ones that matter are not buried in a batch of twelve.
+      non-security:
+        applies-to: version-updates
+        patterns: ["*"]
+    labels: [dependencies]
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule: { interval: weekly }
+    labels: [dependencies, security]

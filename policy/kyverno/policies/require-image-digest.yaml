@@ -1,0 +1,72 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-digest
+  annotations:
+    policies.kyverno.io/title: Images must be referenced by digest
+    policies.kyverno.io/severity: high
+    example-bank.io/threat: "T4 — finding A6"
+    example-bank.io/day-one-mode: "Audit cluster-wide, Enforce in ns/accounts"
+    example-bank.io/promotion-criteria: >-
+      Promote cluster-wide to Enforce when every team's deploy pipeline emits
+      digests. Evidence required: 14 days of PolicyReport with zero failures, plus
+      a check that each team's CD tooling resolves tags at build time rather than
+      at apply time (Argo image-updater and Flux both do; hand-written kubectl
+      pipelines mostly do not). Realistically a quarter of work that is not mine,
+      which is exactly why it starts as Audit.
+spec:
+  validationFailureAction: Audit
+  background: true
+  validationFailureActionOverrides:
+    - action: Enforce
+      namespaces: [accounts]
+  rules:
+    - name: image-must-be-digest
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      validate:
+        message: >-
+          Images must be referenced by digest (repo@sha256:...), not by tag. A tag
+          is a mutable pointer: with `:latest` the default imagePullPolicy is
+          Always, so re-pointing the tag reaches every replica on the next restart
+          with no deploy and no change in Git. It also makes signature
+          verification meaningless — you cannot verify a moving target. [T4/A6]
+        foreach:
+          - list: "request.object.spec.containers[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('^[^@]+$', element.image) }}"
+                    operator: Equals
+                    value: true
+
+    - name: init-image-must-be-digest
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, falco-system, amazon-cloudwatch]
+      preconditions:
+        all:
+          - key: "{{ length(request.object.spec.initContainers || `[]`) }}"
+            operator: GreaterThan
+            value: 0
+      validate:
+        message: "Init container images must be referenced by digest. [T4/A6]"
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('^[^@]+$', element.image) }}"
+                    operator: Equals
+                    value: true
