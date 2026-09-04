@@ -125,7 +125,7 @@ policy problem".
 
 | # | Field | What to submit |
 |---|---|---|
-| 7.1 | **Secrets delivery configuration**, no plaintext in repo, mapped to Secrets Manager · YAML · REQUIRED | `files/07-1-secrets-delivery.yaml` |
+| 7.1 | **Secrets delivery configuration**, no plaintext in repo, mapped to Secrets Manager · YAML · REQUIRED | `files/07-1-secrets-delivery.yaml` (the IRSA policy for the secrets operator is `files/07-4-external-secrets-iam-policy.json` if there is a second slot) |
 | 7.2 | **Rotation mechanism**: interval, emergency procedure, target times per credential · Markdown · REQUIRED (Write **or** Upload, 50 000 char limit) | `files/07-2-rotation.md` — about 8 400 characters, well inside the limit. Upload it, or open and paste the whole file. |
 | 7.3 | **Log redaction specification**: what is redacted, at which layer, what it still leaks · Markdown · REQUIRED | `files/07-3-log-redaction.md` |
 
