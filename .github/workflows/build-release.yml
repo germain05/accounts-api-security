@@ -94,7 +94,7 @@ jobs:
           role-duration-seconds: 900          # 15 min; the job takes ~6
 
       - if: vars.AWS_ENABLED == 'true'
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
 
       # Belt and braces on top of ECR's IMMUTABLE setting (terraform/ecr.tf): fail
       # loudly rather than silently no-op if this tag already exists.  (T4)
@@ -166,7 +166,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: attest-${{ github.run_id }}
       - if: vars.AWS_ENABLED == 'true'
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
       - if: vars.AWS_ENABLED != 'true'
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
