@@ -176,7 +176,7 @@ jobs:
 
       # SBOM is generated from the *pushed image by digest*, not from the workspace,
       # so it describes the artefact that will actually run.
-      - uses: anchore/sbom-action@df80a981bc6edbc4e220a492d3cbe9f5547a6e75 # v0.17.9
+      - uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ env.REF }}
           format: spdx-json
