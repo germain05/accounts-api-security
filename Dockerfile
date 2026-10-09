@@ -1,7 +1,7 @@
 # Minimal, distroless, non-root. Referenced by the build pipeline and by several
 # claims elsewhere in this repo — the Falco rules assume there is no shell in the
 # image, and the SCA threshold assumes the OS layer is nearly empty.
-FROM golang:1.23-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY app/go.mod ./
 RUN go mod download
